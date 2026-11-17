@@ -32,14 +32,16 @@ Microsoft Teams의 **채널(Channel)** 및 **그룹 채팅(Group Chat)** 을 대
 | **03** | [03_adaptive_cards_and_backend_handling_json.md](./03_adaptive_cards_and_backend_handling_json.md) | **Adaptive Card JSON 및 백엔드 액션 처리**: 입력 폼·레이아웃·Teams 전용 확장(`msteams` 폭 확장, `@mention`), `Action.Submit` vs `Action.Execute`(Universal Action Model), `adaptiveCard/action` Invoke 요청/응답 JSON, User-Specific Views(`refresh`) |
 | **04** | [04_workflows_webhook_and_messaging_guide.md](./04_workflows_webhook_and_messaging_guide.md) | **Workflows 기반 채널/그룹 채팅 메시지 구현**: Webhook 수신 트리거 설정·보안·`Parse JSON` 매핑, 카드 전송 및 양방향 응답 대기(`wait for a response` vs 분리형 리스너), 실무 주의사항(Gotchas) |
 | **05** | [05_workflows_create_channel_and_group_chat.md](./05_workflows_create_channel_and_group_chat.md) | **Workflows로 채널·그룹 채팅 직접 생성 및 연동**: `Create a chat`(그룹 채팅 생성), `Create a channel`(표준/비공개/공유 채널 생성), 멤버 추가, 동적 `Conversation ID` / `Channel ID` 바인딩, 비공개 채널 우회 전략 및 E2E 실전 시나리오 |
+| **06** | [06_workflows_ui_and_expressions_step_by_step.md](./06_workflows_ui_and_expressions_step_by_step.md) | **Workflows UI 클릭 순서 · 흐름 편집기 · 수식(`fx`) 완전 정복**: 채팅방에서 워크플로 선택·생성, `Send each adaptive card` 제거 및 `Parse JSON` 조립, 새/클래식 디자이너, 동적 콘텐츠(`⚡`) vs 수식(`fx`) 치트시트, 실습 A/B 및 디버깅 팁 |
 
 ---
 
 ## 3. 빠른 선택 가이드
 
 - **단순 단방향 알림 (서버 → Teams 채널/그룹 채팅)**: `01` + `04` (Workflows Incoming Webhook + Adaptive Card JSON)
+- **Teams UI 클릭부터 `Parse JSON`·수식(`fx`) 작성법까지 처음부터 따라하기**: `06` (채팅에서 시작하기 · 흐름 편집기 · 수식 백과사전)
 - **승인 요청/설문처럼 버튼 클릭 후 백엔드/플로우에서 후속 처리**:
-  - 로우코드(Power Automate) 중심: `03` + `04` (`Post adaptive card and wait for a response`)
+  - 로우코드(Power Automate) 중심: `03` + `04` + `06` (`Post adaptive card and wait for a response`)
   - 커스텀 백엔드 서버 중심: `01` + `03` (Teams Bot + `Action.Execute` / `adaptiveCard/action`)
 - **레거시 `MessageCard` JSON을 보유한 상태에서의 이전**: `02` + `04` (렌더링 호환 확인 후 Adaptive Card로 전환 권장)
 - **이벤트 발생 시 새 채널이나 새 그룹 채팅방 자체를 자동 개설**: `05` (`Create a chat` / `Create a channel` + 카드 전송)
