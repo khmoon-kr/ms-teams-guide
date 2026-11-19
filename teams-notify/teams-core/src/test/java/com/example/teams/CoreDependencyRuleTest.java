@@ -13,7 +13,7 @@ import java.util.stream.Stream;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * 08_java_library_coding_rules.md 핵심 규칙(도메인 중립성, 무의존성, Javadoc 및 package-info 필수화)을
+ * docs/CODING_RULES.md 핵심 규칙(도메인 중립성, 무의존성, Javadoc 및 package-info 필수화)을
  * 빌드 타임에 자동 검증하는 아키텍처 테스트.
  */
 class CoreDependencyRuleTest {

@@ -1,6 +1,8 @@
-# 07. 빌링 플랫폼 × MS Teams 운영 연동 Java(Spring Boot) 구현 가이드
+# `teams-notify` — MS Teams 알림·서명 링크 Java 17 라이브러리 & 데모 콘솔
 
-이 문서는 [`teams-notify`](./teams-notify) 디렉터리에 구현된 **MS Teams 알림·서명 링크 Java 17 라이브러리(`TeamsNotifier`) 및 빌링 데모 웹 애플리케이션**의 구조, 동작 원리, 실행 방법 및 API 호출 예시를 설명합니다.
+범용 **MS Teams 알림 전송 · 6종 멀티 포맷 조립 · `HMAC-SHA256` 서명 링크 유입 검증 라이브러리(`TeamsNotifier`)**와, 이를 빌링(결제) 운영 시나리오로 검증할 수 있는 **Spring Boot 3 테스트용 REST API 및 웹 콘솔** 프로젝트입니다.
+
+> **라이브러리 개발·기여 시 필수 준수 사항**: [공통 라이브러리 8대 코딩 규칙 (`./docs/CODING_RULES.md`)](./docs/CODING_RULES.md)
 
 ---
 

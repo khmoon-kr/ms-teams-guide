@@ -1,6 +1,6 @@
 # `teams-notify` Library Coding Rules
 
-이 디렉터리는 다른 서비스에서 의존성으로 가져다 쓰는 공용 MS Teams 알림 라이브러리(`teams-core`, `teams-spring-boot-starter`)와 검증용 데모 앱(`teams-demo-app`)으로 구성되어 있습니다. 코드를 추가·수정할 때 아래 규칙을 반드시 준수하세요. (상세 가이드: `../08_java_library_coding_rules.md`)
+이 디렉터리는 다른 서비스에서 의존성으로 가져다 쓰는 공용 MS Teams 알림 라이브러리(`teams-core`, `teams-spring-boot-starter`)와 검증용 데모 앱(`teams-demo-app`)으로 구성되어 있습니다. 코드를 추가·수정할 때 아래 규칙을 반드시 준수하세요. (상세 가이드: [`./docs/CODING_RULES.md`](./docs/CODING_RULES.md))
 
 1. **도메인 중립적·간결한 네이밍**
    - `teams-core`, `teams-spring-boot-starter`의 클래스·패키지·프로퍼티 이름 및 구현 내부에 특정 도메인 용어(`Billing...`, `Order...`, `Refund...` 등)를 절대 넣지 마세요.

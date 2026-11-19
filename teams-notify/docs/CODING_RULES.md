@@ -1,8 +1,8 @@
-# 08. 공통 라이브러리(Java / Spring Boot Starter) 코딩 규칙
+# 공통 라이브러리(Java / Spring Boot Starter) 코딩 규칙
 
 일반 서비스 애플리케이션과 달리 **여러 프로젝트가 의존성(`dependency`)으로 가져다 쓰는 공용 라이브러리**는 한 번 잘못 설계된 클래스명, 전이 의존성(Transitive Dependency), 전역 상태 변경이 라이브러리를 참조하는 모든 서비스에 전파됩니다.
 
-이 문서는 [`teams-notify`](./teams-notify)를 비롯한 사내 공용 Java 17 / Spring Boot Starter 라이브러리가 반드시 지켜야 할 **7대 코딩 규칙과 체크리스트**를 정의합니다.
+이 문서는 [`teams-notify`](../README.md)를 비롯한 사내 공용 Java 17 / Spring Boot Starter 라이브러리가 반드시 지켜야 할 **8대 코딩 규칙과 체크리스트**를 정의합니다.
 
 ---
 
