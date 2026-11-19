@@ -1,6 +1,6 @@
 # 07. 빌링 플랫폼 × MS Teams 운영 연동 Java(Spring Boot) 구현 가이드
 
-이 문서는 [`billing-teams-ops`](./billing-teams-ops) 디렉터리에 구현된 **Java 17 + Spring Boot 3 REST API 및 Teams 링크 유입 검증 웹 애플리케이션**의 구조, 동작 원리, 실행 방법 및 API 호출 예시를 설명합니다.
+이 문서는 [`teams-notify`](./teams-notify) 디렉터리에 구현된 **MS Teams 알림·서명 링크 Java 17 라이브러리(`TeamsNotifier`) 및 빌링 데모 웹 애플리케이션**의 구조, 동작 원리, 실행 방법 및 API 호출 예시를 설명합니다.
 
 ---
 
@@ -51,24 +51,24 @@ http://localhost:8080/ops/transactions/TX-20261119-1000
 
 ## 3. 멀티 모듈 아키텍처 (라이브러리 vs 테스트용 데모 앱 분리)
 
-다른 프로젝트에서 테스트용 컨트롤러·화면 의존성 없이 **순수 라이브러리로 바로 가져다 쓸 수 있도록** 3개의 Maven 모듈로 분리되어 있습니다.
+다른 프로젝트에서 도메인 종속적인 이름이나 테스트용 컨트롤러 없이 **범용 MS Teams 알림 라이브러리로 바로 가져다 쓸 수 있도록** 간결한 네이밍의 3개 모듈로 구성되어 있습니다.
 
 ```text
-billing-teams-ops/                          (Parent POM)
-├── billing-teams-core/                     [순수 Java 17 라이브러리 JAR — Spring 의존성 0개]
-│   ├── BillingTeamsNotifier                (단일 진입점 Facade)
-│   ├── TeamsClientSettings                 (Builder 기반 설정, entryPathTemplate 커스텀 지원)
-│   ├── BillingTransactionView / Snapshot   (외부 프로젝트 자체 엔티티/DTO 연동 인터페이스)
-│   ├── BillingAdaptiveCardFactory          (Adaptive Card v1.4 + 커스텀 카드 조립기)
-│   ├── TeamsMultiFormatNotificationFactory (Rich HTML, Activity Feed, Urgent+@Tag, Receipt, Hero)
+teams-notify/                               (Parent POM)
+├── teams-core/                             [순수 Java 17 라이브러리 JAR — Spring 의존성 0개]
+│   ├── TeamsNotifier                       (단일 진입점 Facade)
+│   ├── TeamsSettings                       (Builder 기반 설정, entryPathTemplate 커스텀 지원)
+│   ├── TransactionView / TransactionSnapshot (외부 프로젝트 자체 엔티티/DTO 연동 인터페이스)
+│   ├── TeamsCardFactory                    (Adaptive Card v1.4 + 커스텀 카드 조립기)
+│   ├── TeamsFormatFactory                  (Rich HTML, Activity Feed, Urgent+@Tag, Receipt, Hero)
 │   ├── TeamsLinkSigner / OutgoingWebhookVerifier (JDK 표준 HmacSHA256 서명·검증)
-│   └── TeamsWorkflowWebhookClient          (JDK 17 HttpClient 기반 다중 채널 전송기)
+│   └── TeamsWebhookClient                  (JDK 17 HttpClient 기반 다중 채널 전송기)
 │
-├── billing-teams-spring-boot-starter/      [Spring Boot 3 AutoConfiguration 스타터 JAR]
-│   ├── BillingTeamsProperties              (application.yml의 billing.teams.* 자동 바인딩)
-│   └── BillingTeamsAutoConfiguration       (@ConditionalOnMissingBean 기반 자동 빈 등록)
+├── teams-spring-boot-starter/              [Spring Boot 3 AutoConfiguration 스타터 JAR]
+│   ├── TeamsProperties                     (application.yml의 teams.* 자동 바인딩)
+│   └── TeamsAutoConfiguration              (@ConditionalOnMissingBean 기반 자동 빈 등록)
 │
-└── billing-teams-demo-app/                 [테스트·검증용 REST API & Thymeleaf 웹 콘솔 앱]
+└── teams-demo-app/                         [테스트·검증용 REST API & Thymeleaf 웹 콘솔 앱]
     └── 시뮬레이터(/ops), 6종 포맷 비교(/ops/formats), 서명 링크 검증 화면(/ops/transactions/{txId})
 ```
 
@@ -76,39 +76,38 @@ billing-teams-ops/                          (Parent POM)
 
 먼저 로컬 Maven 저장소(`~/.m2`) 또는 사내 Nexus/GitHub Packages에 라이브러리를 배포(`mvn clean install` / `mvn deploy`)합니다.
 
-#### 케이스 A: 다른 Spring Boot 3 프로젝트에서 사용 (`billing-teams-spring-boot-starter`)
+#### 케이스 A: 다른 Spring Boot 3 프로젝트에서 사용 (`teams-spring-boot-starter`)
 
 1) `pom.xml` (또는 `build.gradle`) 의존성 추가:
 ```xml
 <dependency>
     <groupId>com.example</groupId>
-    <artifactId>billing-teams-spring-boot-starter</artifactId>
+    <artifactId>teams-spring-boot-starter</artifactId>
     <version>0.1.0</version>
 </dependency>
 ```
 
 2) 사용하는 서비스의 `application.yml` 설정:
 ```yaml
-billing:
-  teams:
-    webhook-url: ${TEAMS_WEBHOOK_URL:}
-    base-url: https://admin.our-billing.com
-    entry-path-template: /admin/payments/{txId}   # 우리 서비스의 실제 상세 화면 경로로 지정
-    link-secret: ${TEAMS_LINK_SECRET}
-    link-ttl-minutes: 30
-    max-outbox-size: 0                            # 실서비스에서 메모리 Outbox 보관이 불필요하면 0
+teams:
+  webhook-url: ${TEAMS_WEBHOOK_URL:}
+  base-url: https://admin.our-service.com
+  entry-path-template: /admin/payments/{txId}   # 우리 서비스의 실제 상세 화면 경로로 지정
+  link-secret: ${TEAMS_LINK_SECRET}
+  link-ttl-minutes: 30
+  max-outbox-size: 0                            # 실서비스에서 메모리 Outbox 보관이 불필요하면 0
 ```
 
-3) 비즈니스 코드에서 `@Autowired` / 생성자 주입으로 즉시 사용:
+3) 비즈니스 코드에서 `@Autowired` / 생성자 주입으로 `TeamsNotifier` 즉시 사용:
 ```java
 @Service
 @RequiredArgsConstructor
 public class PaymentSettlementService {
 
-    private final BillingTeamsNotifier teamsNotifier; // 자동 빈 등록됨!
+    private final TeamsNotifier teamsNotifier; // 자동 빈 등록됨!
 
     public void onPaymentCaptured(OrderPaymentEntity entity) {
-        var snapshot = BillingTransactionSnapshot.builder()
+        var snapshot = TransactionSnapshot.builder()
                 .txId(entity.getTxNo())
                 .orderId(entity.getOrderNo())
                 .merchantName(entity.getStoreName())
@@ -124,22 +123,22 @@ public class PaymentSettlementService {
 
         // 2) 임의의 자체 어드민 URL에 Teams 유입 검증 서명만 붙이고 싶을 때
         String signedAdminUrl = teamsNotifier.signCustomUrl(
-                "https://admin.our-billing.com/settlements/991?tab=detail",
+                "https://admin.our-service.com/settlements/991?tab=detail",
                 entity.getTxNo(), "SETTLEMENT_ALERT", "approve"
         );
     }
 }
 ```
 
-#### 케이스 B: Spring이 없는 일반 Java 17 / 배치 / 타 프레임워크에서 사용 (`billing-teams-core`)
+#### 케이스 B: Spring이 없는 일반 Java 17 / 배치 / 타 프레임워크에서 사용 (`teams-core`)
 
-`billing-teams-core`는 `jackson-databind`와 `slf4j-api`만 참조하며 Spring 의존성이 전혀 없습니다.
+`teams-core`는 `jackson-databind`와 `slf4j-api`만 참조하며 Spring 의존성이 전혀 없습니다.
 
 ```java
-BillingTeamsNotifier teams = BillingTeamsNotifier.create(
-        TeamsClientSettings.builder()
+TeamsNotifier teams = TeamsNotifier.create(
+        TeamsSettings.builder()
                 .webhookUrl(System.getenv("TEAMS_WEBHOOK_URL"))
-                .baseUrl("https://admin.our-billing.com")
+                .baseUrl("https://admin.our-service.com")
                 .entryPathTemplate("/admin/payments/{txId}")
                 .linkSecret(System.getenv("TEAMS_LINK_SECRET"))
                 .maxOutboxSize(0)
@@ -152,24 +151,24 @@ LinkVerificationResult verified = teams.verifySignedQueryMap("TX-1001", queryPar
 
 ---
 
-### 3.2 테스트용 데모 서버 실행 방법 (`billing-teams-demo-app`)
+### 3.2 테스트용 데모 서버 실행 방법 (`teams-demo-app`)
 
 Teams Webhook URL이 없어도 Dry-Run 시뮬레이터 모드로 바로 실행해 모든 카드 JSON과 링크 유입 검증을 테스트할 수 있습니다.
 
 ```bash
-cd billing-teams-ops
+cd teams-notify
 mvn clean install
-java -jar billing-teams-demo-app/target/billing-teams-demo-app-0.1.0.jar
+java -jar teams-demo-app/target/teams-demo-app-0.1.0.jar
 ```
 
 실제 MS Teams 채팅/채널 웹훅을 연결하려면 환경변수만 지정해 기동합니다:
 
 ```bash
 export TEAMS_WEBHOOK_URL="https://defaultxxxx.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/..."
-export BILLING_BASE_URL="https://billing-admin.company.com"
+export APP_BASE_URL="https://admin.company.com"
 export TEAMS_LINK_SECRET="prod-32byte-random-hmac-secret-key"
 
-java -jar billing-teams-demo-app/target/billing-teams-demo-app-0.1.0.jar
+java -jar teams-demo-app/target/teams-demo-app-0.1.0.jar
 ```
 
 ---
