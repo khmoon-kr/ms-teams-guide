@@ -34,6 +34,7 @@ Microsoft Teams의 **채널(Channel)** 및 **그룹 채팅(Group Chat)** 을 대
 | **05** | [05_workflows_create_channel_and_group_chat.md](./05_workflows_create_channel_and_group_chat.md) | **Workflows로 채널·그룹 채팅 직접 생성 및 연동**: `Create a chat`(그룹 채팅 생성), `Create a channel`(표준/비공개/공유 채널 생성), 멤버 추가, 동적 `Conversation ID` / `Channel ID` 바인딩, 비공개 채널 우회 전략 및 E2E 실전 시나리오 |
 | **06** | [06_workflows_ui_and_expressions_step_by_step.md](./06_workflows_ui_and_expressions_step_by_step.md) | **Workflows UI 클릭 순서 · 흐름 편집기 · 수식(`fx`) 완전 정복**: 채팅방에서 워크플로 선택·생성, `Send each adaptive card` 제거 및 `Parse JSON` 조립, 새/클래식 디자이너, 동적 콘텐츠(`⚡`) vs 수식(`fx`) 치트시트, 실습 A/B 및 디버깅 팁 |
 | **07** | [07_billing_teams_java_api_guide.md](./07_billing_teams_java_api_guide.md) | **MS Teams 알림·서명 링크 라이브러리 및 빌링 데모 구현 가이드**: [`teams-notify/`](./teams-notify) 멀티 모듈 프로젝트 (`teams-core` / `teams-spring-boot-starter` / `teams-demo-app`) — `TeamsNotifier` 라이브러리, `HMAC-SHA256` 서명 링크 검증 화면(`/ops/transactions/{txId}`), 6종 포맷 비교 |
+| **08** | [08_java_library_coding_rules.md](./08_java_library_coding_rules.md) | **공통 라이브러리(Java / Spring Boot Starter) 코딩 규칙**: 도메인 중립적 네이밍(`Teams*`), 3-계층 모듈 경계 및 의존성 격리, 불변 API·Builder 설계, `@AutoConfiguration` 에티켓, 스레드·메모리 보호, 보안 및 자동 검증 규칙 |
 
 ---
 
