@@ -5,7 +5,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
-public class PaymentTransaction implements TransactionView {
+public class PaymentTransaction {
 
     public record AuditLog(Instant timestamp, String title, String detail) {}
 

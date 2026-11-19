@@ -1,8 +1,13 @@
 package com.example.teams.security;
 
 import com.example.teams.TeamsNotifier;
+import com.example.teams.cards.AdaptiveCardSpec;
+import com.example.teams.cards.AdaptiveCardSpec.BannerStyle;
+import com.example.teams.cards.AdaptiveCardSpec.Fact;
+import com.example.teams.cards.AdaptiveCardSpec.TextColor;
+import com.example.teams.cards.TeamsFormatFactory.ReceiptCardSpec;
+import com.example.teams.cards.TeamsFormatFactory.ReceiptItem;
 import com.example.teams.config.TeamsSettings;
-import com.example.teams.domain.TransactionSnapshot;
 import com.example.teams.domain.TeamsFormat;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -14,9 +19,11 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class TeamsLinkSignerTest {
 
@@ -26,8 +33,8 @@ class TeamsLinkSignerTest {
     @BeforeEach
     void setUp() {
         TeamsSettings settings = TeamsSettings.builder()
-                .baseUrl("https://billing-ops.example.com")
-                .entryPathTemplate("/admin/payments/{txId}")
+                .baseUrl("https://ops.example.com")
+                .entryPathTemplate("/admin/items/{id}")
                 .linkSecret("unit-test-hmac-secret-2026")
                 .linkTtlMinutes(30)
                 .build();
@@ -35,12 +42,19 @@ class TeamsLinkSignerTest {
     }
 
     @Test
+    void rejectsTooShortSecretAtBuildTime() {
+        assertThatThrownBy(() -> TeamsSettings.builder().linkSecret("short-key").build())
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("at least 16 bytes");
+    }
+
+    @Test
     void validSignedUrlWithCustomPathTemplatePassesVerification() {
-        String url = signer.createSignedTransactionUrl("TX-20261119-001", "PAYMENT_AUTHORIZED", "view");
-        assertThat(url).startsWith("https://billing-ops.example.com/admin/payments/TX-20261119-001?");
+        String url = signer.createSignedEntryUrl("ITEM-20261119-001", "ALERT_CREATED", "view");
+        assertThat(url).startsWith("https://ops.example.com/admin/items/ITEM-20261119-001?");
 
         Map<String, String> params = parseQueryParams(url);
-        LinkVerificationResult result = signer.verifyQueryMap("TX-20261119-001", params);
+        LinkVerificationResult result = signer.verifyQueryMap("ITEM-20261119-001", params);
 
         assertThat(result.status()).isEqualTo(LinkVerificationStatus.VERIFIED_TEAMS);
         assertThat(result.isVerified()).isTrue();
@@ -49,33 +63,33 @@ class TeamsLinkSignerTest {
     @Test
     void signCustomUrlAppendsParamsWithExistingQueryString() {
         String signed = signer.signCustomUrl(
-                "https://portal.other-service.io/settlements/detail?tenant=kr",
-                "SET-9910",
+                "https://portal.other-service.io/approvals/detail?tenant=kr",
+                "REQ-9910",
                 "RECEIPT_CARD",
                 "approve"
         );
         assertThat(signed).contains("tenant=kr&src=msteams&cardType=RECEIPT_CARD&action=approve");
 
         Map<String, String> params = parseQueryParams(signed);
-        LinkVerificationResult result = signer.verifyQueryMap("SET-9910", params);
+        LinkVerificationResult result = signer.verifyQueryMap("REQ-9910", params);
         assertThat(result.isVerified()).isTrue();
         assertThat(result.cardType()).isEqualTo("RECEIPT_CARD");
     }
 
     @Test
     void directAccessWithoutParamsReturnsDirectUnverified() {
-        LinkVerificationResult result = signer.verify("TX-20261119-001", null, null, null, null, null, null);
+        LinkVerificationResult result = signer.verify("ITEM-001", null, null, null, null, null, null);
         assertThat(result.status()).isEqualTo(LinkVerificationStatus.DIRECT_UNVERIFIED);
         assertThat(result.isVerified()).isFalse();
     }
 
     @Test
     void tamperedParameterFailsSignatureCheck() {
-        String url = signer.createSignedTransactionUrl("TX-20261119-001", "PAYMENT_AUTHORIZED", "view");
+        String url = signer.createSignedEntryUrl("ITEM-001", "ALERT_CREATED", "view");
         Map<String, String> params = parseQueryParams(url);
-        params.put("action", "refund"); // 공격자가 action 변조
+        params.put("action", "force_approve");
 
-        LinkVerificationResult result = signer.verifyQueryMap("TX-20261119-001", params);
+        LinkVerificationResult result = signer.verifyQueryMap("ITEM-001", params);
         assertThat(result.status()).isEqualTo(LinkVerificationStatus.INVALID_SIGNATURE);
         assertThat(result.isVerified()).isFalse();
     }
@@ -84,40 +98,53 @@ class TeamsLinkSignerTest {
     void expiredLinkReturnsExpiredStatus() {
         long pastIat = fixedNow.getEpochSecond() - 3600;
         long pastExp = fixedNow.getEpochSecond() - 60;
-        String url = signer.createSignedTransactionUrl("TX-20261119-001", "PAYMENT_AUTHORIZED", "view", pastIat, pastExp);
+        String url = signer.createSignedEntryUrl("ITEM-001", "ALERT_CREATED", "view", pastIat, pastExp);
         Map<String, String> params = parseQueryParams(url);
 
-        LinkVerificationResult result = signer.verifyQueryMap("TX-20261119-001", params);
+        LinkVerificationResult result = signer.verifyQueryMap("ITEM-001", params);
         assertThat(result.status()).isEqualTo(LinkVerificationStatus.EXPIRED);
         assertThat(result.isVerified()).isFalse();
     }
 
     @Test
-    void pureJavaStandaloneFacadeWorksWithoutSpring() {
+    void domainNeutralFacadeBuildsImmutableCardsAndFormatsWithoutSpring() {
         TeamsNotifier notifier = TeamsNotifier.create(
                 TeamsSettings.builder()
                         .baseUrl("https://console.my-company.com")
-                        .entryPathTemplate("/billing/tx/{txId}")
-                        .linkSecret("standalone-java-secret-key")
-                        .build()
+                        .entryPathTemplate("/deployments/{id}")
+                        .linkSecret("standalone-java-secret-key-2026")
+                        .build(),
+                Clock.fixed(fixedNow, ZoneOffset.UTC)
         );
 
-        TransactionSnapshot snapshot = TransactionSnapshot.builder()
-                .txId("TX-LIB-777")
-                .orderId("ORD-LIB-01")
-                .merchantName("외부 정산 서비스")
-                .amount(330_000L)
-                .paymentMethod("법인카드")
-                .authCode("99112233")
-                .approvedAt(fixedNow)
+        AdaptiveCardSpec spec = AdaptiveCardSpec.builder()
+                .eventType("DEPLOY_ALERT")
+                .bannerStyle(BannerStyle.GOOD)
+                .badgeLabel("DEPLOYMENT SUCCEEDED")
+                .headline("v2.4.0 Production")
+                .headlineColor(TextColor.GOOD)
+                .subtitle("배포가 정상 완료되었습니다.")
+                .addFact("서비스", "order-api")
+                .addAction(notifier.cards().signedEntryButton("배포 상세 열기", "DEP-777", "DEPLOY_ALERT", "view"))
                 .build();
 
-        var dispatch = notifier.notifyPaymentAuthorized(snapshot);
-        assertThat(dispatch.signedDetailUrl()).startsWith("https://console.my-company.com/billing/tx/TX-LIB-777?");
+        var dispatch = notifier.sendCard("DEP-777", spec);
+        assertThat(dispatch.signedDetailUrl()).startsWith("https://console.my-company.com/deployments/DEP-777?");
+        assertThatThrownBy(() -> dispatch.payload().put("tamper", "x"))
+                .isInstanceOf(UnsupportedOperationException.class);
 
-        var receipt = notifier.formats().buildReceiptCard(snapshot);
+        var receipt = notifier.formats().buildReceiptCard(new ReceiptCardSpec(
+                "DEP-777",
+                "클라우드 리소스 명세",
+                List.of(new Fact("청구 ID", "DEP-777")),
+                List.of(new ReceiptItem("Compute Node", "m6i.large", "$120", "2")),
+                "$24",
+                "$264",
+                "명세 상세 보기",
+                "view"
+        ));
         assertThat(receipt.format()).isEqualTo(TeamsFormat.RECEIPT_CARD);
-        assertThat(notifier.verifySignedQueryMap("TX-LIB-777", parseQueryParams(receipt.signedEntryUrl())).isVerified()).isTrue();
+        assertThat(notifier.verifySignedQueryMap("DEP-777", parseQueryParams(receipt.signedEntryUrl())).isVerified()).isTrue();
     }
 
     private static Map<String, String> parseQueryParams(String rawUrl) {

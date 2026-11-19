@@ -15,6 +15,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class CoreDependencyRuleTest {
 
+    private static final List<String> BANNED_DOMAIN_COUPLING_TERMS = List.of(
+            "Billing", "billing", "Refund", "refund", "Capture", "Merchant", "txId", "PG_"
+    );
+
     @Test
     void coreModuleMustNotHaveSpringOnClasspath() {
         boolean springLoaded;
@@ -38,11 +42,15 @@ class CoreDependencyRuleTest {
 
             for (Path file : javaFiles) {
                 String fileName = file.getFileName().toString();
-                assertThat(fileName)
-                        .as("라이브러리 클래스명에 특정 도메인 접두어(Billing*)를 붙이지 않습니다: %s", fileName)
-                        .doesNotStartWith("Billing");
-
                 String src = Files.readString(file);
+
+                for (String bannedTerm : BANNED_DOMAIN_COUPLING_TERMS) {
+                    assertThat(src)
+                            .as("teams-core 파일(%s)에는 특정 비즈니스 도메인 용어('%s')가 포함되면 안 됩니다 (규칙 1: 도메인 중립성).",
+                                    fileName, bannedTerm)
+                            .doesNotContain(bannedTerm);
+                }
+
                 assertThat(src)
                         .as("%s 에 Spring import가 포함되면 안 됩니다.", fileName)
                         .doesNotContain("import org.springframework.");
@@ -54,6 +62,7 @@ class CoreDependencyRuleTest {
                 assertThat(src)
                         .as("%s 에서 JVM 전역 상태를 변경하면 안 됩니다.", fileName)
                         .doesNotContain("TimeZone.setDefault")
+                        .doesNotContain("Locale.setDefault")
                         .doesNotContain("System.setProperty");
             }
         }

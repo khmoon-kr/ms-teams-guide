@@ -1,6 +1,6 @@
 package com.example.teams.domain;
 
-public enum EventType {
+public enum BillingEventType {
     PAYMENT_AUTHORIZED("결제 승인 알림"),
     CAPTURE_SUCCEEDED("매입 완료 알림"),
     CAPTURE_FAILED("매입 실패 경보"),
@@ -11,7 +11,7 @@ public enum EventType {
 
     private final String title;
 
-    EventType(String title) {
+    BillingEventType(String title) {
         this.title = title;
     }
 

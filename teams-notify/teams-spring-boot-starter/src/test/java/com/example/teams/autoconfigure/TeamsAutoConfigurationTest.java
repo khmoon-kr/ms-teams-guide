@@ -27,9 +27,9 @@ class TeamsAutoConfigurationTest {
     void registersAllLibraryBeansWithCustomProperties() {
         contextRunner
                 .withPropertyValues(
-                        "teams.base-url=https://admin.external-billing.kr",
-                        "teams.entry-path-template=/payments/{txId}/verify",
-                        "teams.link-secret=external-prod-secret-key",
+                        "teams.base-url=https://admin.external-service.kr",
+                        "teams.entry-path-template=/orders/{id}/verify",
+                        "teams.link-secret=external-prod-secret-key-2026",
                         "teams.link-ttl-minutes=15"
                 )
                 .run(context -> {
@@ -40,13 +40,13 @@ class TeamsAutoConfigurationTest {
                     assertThat(context).hasSingleBean(TeamsWebhookClient.class);
 
                     TeamsNotifier notifier = context.getBean(TeamsNotifier.class);
-                    String signed = notifier.createSignedUrl("TX-EXT-100", "PAYMENT_AUTHORIZED", "view");
-                    assertThat(signed).startsWith("https://admin.external-billing.kr/payments/TX-EXT-100/verify?");
+                    String signed = notifier.createSignedUrl("ORD-EXT-100", "ORDER_CREATED", "view");
+                    assertThat(signed).startsWith("https://admin.external-service.kr/orders/ORD-EXT-100/verify?");
                 });
     }
 
     @Test
-    void backsOffWhenConsumerDefinesCustomBean() {
+    void honorsConsumerClockAndBacksOffOnCustomBean() {
         contextRunner
                 .withUserConfiguration(CustomSignerConfig.class)
                 .run(context -> {

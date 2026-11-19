@@ -1,6 +1,8 @@
 package com.example.teams.security;
 
 import com.example.teams.config.TeamsSettings;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
@@ -12,6 +14,9 @@ import java.time.Instant;
 import java.util.Base64;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * MS Teams 카드/메시지 내 외부 브라우저 이동 링크(Action.OpenUrl, HTML anchor 등)에
@@ -21,6 +26,9 @@ public class TeamsLinkSigner {
 
     public static final String EXPECTED_SOURCE = "msteams";
     private static final String HMAC_ALGO = "HmacSHA256";
+    private static final Pattern PATH_VAR_PATTERN = Pattern.compile("\\{[^/]+}");
+    private static final Logger log = LoggerFactory.getLogger(TeamsLinkSigner.class);
+    private static final AtomicBoolean DEV_SECRET_WARNED = new AtomicBoolean(false);
 
     private final TeamsSettings settings;
     private final Clock clock;
@@ -32,29 +40,42 @@ public class TeamsLinkSigner {
     public TeamsLinkSigner(TeamsSettings settings, Clock clock) {
         this.settings = Objects.requireNonNull(settings, "settings must not be null");
         this.clock = Objects.requireNonNull(clock, "clock must not be null");
+        if (settings.isUsingDefaultDevSecret() && DEV_SECRET_WARNED.compareAndSet(false, true)) {
+            log.warn("[TeamsLinkSigner] 기본 개발용 HMAC 시크릿이 사용 중입니다. 운영 환경에서는 반드시 teams.link-secret 값을 주입하세요.");
+        }
     }
 
     /**
-     * 설정된 baseUrl + entryPathTemplate(기본값: /ops/transactions/{txId})을 기준으로 서명된 URL을 생성합니다.
+     * 설정된 baseUrl + entryPathTemplate(예: /ops/items/{id})을 기준으로 서명된 URL을 생성합니다.
      */
-    public String createSignedTransactionUrl(String txId, String cardType, String action) {
+    public String createSignedEntryUrl(String resourceId, String cardType, String action) {
         Instant now = Instant.now(clock);
         Instant exp = now.plusSeconds(settings.getLinkTtlMinutes() * 60);
-        return createSignedTransactionUrl(txId, cardType, action, now.getEpochSecond(), exp.getEpochSecond());
+        return createSignedEntryUrl(resourceId, cardType, action, now.getEpochSecond(), exp.getEpochSecond());
     }
 
-    public String createSignedTransactionUrl(String txId, String cardType, String action, long iatEpochSec, long expEpochSec) {
+    public String createSignedEntryUrl(
+            String resourceId,
+            String cardType,
+            String action,
+            long iatEpochSec,
+            long expEpochSec
+    ) {
+        Objects.requireNonNull(resourceId, "resourceId must not be null");
         String base = settings.getBaseUrl().replaceAll("/+$", "");
         String pathTemplate = settings.getEntryPathTemplate().startsWith("/")
                 ? settings.getEntryPathTemplate()
                 : "/" + settings.getEntryPathTemplate();
-        String resolvedPath = pathTemplate.replace("{txId}", urlEncode(txId));
-        return signCustomUrl(base + resolvedPath, txId, cardType, action, iatEpochSec, expEpochSec);
+        String encodedId = urlEncode(resourceId);
+        Matcher matcher = PATH_VAR_PATTERN.matcher(pathTemplate);
+        String resolvedPath = matcher.find()
+                ? matcher.replaceAll(Matcher.quoteReplacement(encodedId))
+                : pathTemplate + "/" + encodedId;
+        return signCustomUrl(base + resolvedPath, resourceId, cardType, action, iatEpochSec, expEpochSec);
     }
 
     /**
-     * 외부 프로젝트에서 임의의 자체 웹 URL(예: https://admin.company.com/settlements/9912?tab=refund)에
-     * Teams 유입 검증용 서명 파라미터를 덧붙일 때 사용합니다.
+     * 외부 프로젝트에서 임의의 자체 웹 URL에 Teams 유입 검증용 서명 파라미터를 덧붙일 때 사용합니다.
      */
     public String signCustomUrl(String targetUrl, String resourceId, String cardType, String action) {
         Instant now = Instant.now(clock);
@@ -70,6 +91,8 @@ public class TeamsLinkSigner {
             long iatEpochSec,
             long expEpochSec
     ) {
+        Objects.requireNonNull(targetUrl, "targetUrl must not be null");
+        Objects.requireNonNull(resourceId, "resourceId must not be null");
         String canonical = buildCanonicalPayload(resourceId, EXPECTED_SOURCE, cardType, action, iatEpochSec, expEpochSec);
         String sig = computeHmacBase64Url(canonical);
         char separator = targetUrl.contains("?") ? '&' : '?';
@@ -116,7 +139,7 @@ public class TeamsLinkSigner {
     }
 
     public LinkVerificationResult verify(
-            String txId,
+            String resourceId,
             String src,
             String cardType,
             String action,
@@ -138,10 +161,11 @@ public class TeamsLinkSigner {
             );
         }
 
-        if (isBlank(src) || isBlank(cardType) || isBlank(action) || iat == null || exp == null || isBlank(sig)) {
+        if (isBlank(resourceId) || isBlank(src) || isBlank(cardType) || isBlank(action)
+                || iat == null || exp == null || isBlank(sig)) {
             return new LinkVerificationResult(
                     LinkVerificationStatus.INVALID_SIGNATURE,
-                    "Teams 검증에 필요한 필수 쿼리 파라미터(src, cardType, action, iat, exp, sig) 중 일부가 누락되었습니다.",
+                    "Teams 검증에 필요한 필수 파라미터(resourceId, src, cardType, action, iat, exp, sig) 중 일부가 누락되었습니다.",
                     src,
                     cardType,
                     action,
@@ -164,7 +188,7 @@ public class TeamsLinkSigner {
             );
         }
 
-        String canonical = buildCanonicalPayload(txId, src, cardType, action, iat, exp);
+        String canonical = buildCanonicalPayload(resourceId, src, cardType, action, iat, exp);
         String expectedSig = computeHmacBase64Url(canonical);
 
         boolean matches = MessageDigest.isEqual(
@@ -175,7 +199,7 @@ public class TeamsLinkSigner {
         if (!matches) {
             return new LinkVerificationResult(
                     LinkVerificationStatus.INVALID_SIGNATURE,
-                    "HMAC-SHA256 서명이 일치하지 않습니다. 주소창의 거래 ID·만료시간·액션 또는 서명(sig)이 임의로 수정되었습니다.",
+                    "HMAC-SHA256 서명이 일치하지 않습니다. 주소창의 식별자·만료시간·액션 또는 서명(sig)이 임의로 수정되었습니다.",
                     src,
                     cardType,
                     action,
@@ -189,7 +213,7 @@ public class TeamsLinkSigner {
         if (nowEpoch > exp) {
             return new LinkVerificationResult(
                     LinkVerificationStatus.EXPIRED,
-                    "서명은 정상이지만 링크 유효시간이 만료되었습니다. Teams 채널에서 최신 알림 카드를 확인하거나 새 링크를 요청해 주세요.",
+                    "서명은 정상이지만 링크 유효시간이 만료되었습니다. Teams 채널에서 최신 알림을 확인하거나 새 링크를 요청해 주세요.",
                     src,
                     cardType,
                     action,
@@ -201,7 +225,7 @@ public class TeamsLinkSigner {
 
         return new LinkVerificationResult(
                 LinkVerificationStatus.VERIFIED_TEAMS,
-                "우리 백엔드가 MS Teams 알림에 발급한 정식 서명 링크를 통해 유입되었음이 확인되었습니다.",
+                "MS Teams 알림에 발급된 정식 서명 링크를 통해 유입되었음이 확인되었습니다.",
                 src,
                 cardType,
                 action,
@@ -211,11 +235,12 @@ public class TeamsLinkSigner {
         );
     }
 
-    public String buildCanonicalPayload(String txId, String src, String cardType, String action, long iat, long exp) {
-        return String.join("|", txId, src, cardType, action, String.valueOf(iat), String.valueOf(exp));
+    // 내부 서명 메커니즘은 외부 API 표면적 최소화를 위해 package-private으로 제한 (규칙 3.1)
+    String buildCanonicalPayload(String resourceId, String src, String cardType, String action, long iat, long exp) {
+        return String.join("|", resourceId, src, cardType, action, String.valueOf(iat), String.valueOf(exp));
     }
 
-    public String computeHmacBase64Url(String data) {
+    String computeHmacBase64Url(String data) {
         try {
             Mac mac = Mac.getInstance(HMAC_ALGO);
             SecretKeySpec secretKey = new SecretKeySpec(

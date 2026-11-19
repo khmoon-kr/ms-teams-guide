@@ -1,11 +1,11 @@
 package com.example.teams.controller;
 
-import com.example.teams.cards.TeamsFormatFactory;
+import com.example.teams.cards.FormatMessage;
 import com.example.teams.domain.PaymentTransaction;
 import com.example.teams.domain.TeamsFormat;
 import com.example.teams.dto.FormatSampleRequest;
-import com.example.teams.dto.FormatShowcaseResponse;
 import com.example.teams.service.BillingOperationsService;
+import com.example.teams.service.BillingTeamsComposer;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -23,19 +23,16 @@ import java.util.Map;
 public class TeamsFormatController {
 
     private final BillingOperationsService billingService;
-    private final TeamsFormatFactory formatFactory;
+    private final BillingTeamsComposer composer;
 
     public TeamsFormatController(
             BillingOperationsService billingService,
-            TeamsFormatFactory formatFactory
+            BillingTeamsComposer composer
     ) {
         this.billingService = billingService;
-        this.formatFactory = formatFactory;
+        this.composer = composer;
     }
 
-    /**
-     * Teams에서 활용 가능한 전체 알림 포맷 카탈로그 조회
-     */
     @GetMapping
     public List<Map<String, String>> listAvailableFormats() {
         return Arrays.stream(TeamsFormat.values())
@@ -50,26 +47,23 @@ public class TeamsFormatController {
                 .toList();
     }
 
-    /**
-     * 특정 거래에 대해 6가지 알림 포맷 전체를 한 번에 생성하여 비교 조회
-     */
     @GetMapping("/compare-all")
-    public List<FormatShowcaseResponse> compareAllFormats(@RequestParam(required = false) String txId) {
+    public List<FormatMessage> compareAllFormats(@RequestParam(required = false) String txId) {
         PaymentTransaction tx = resolveTransaction(txId);
         return List.of(
-                formatFactory.buildHtmlMessage(tx, "billing-oncall@company.com", null),
-                formatFactory.buildActivityFeedAlert(tx, "approver@company.com", null),
-                formatFactory.buildUrgentTagAlert(tx, "결제운영당직", null),
-                formatFactory.buildReceiptCard(tx),
-                formatFactory.buildHeroCard(tx),
-                formatFactory.buildAdaptiveCardComparison(tx)
+                composer.composeHtmlFormat(tx, "billing-oncall@company.com", null),
+                composer.composeActivityFeedFormat(tx, "approver@company.com", null),
+                composer.composeUrgentFormat(tx, "결제운영당직", null),
+                composer.composeReceiptFormat(tx),
+                composer.composeHeroFormat(tx),
+                composer.composeAdaptiveComparisonFormat(tx)
         );
     }
 
     @PostMapping("/html-message")
-    public FormatShowcaseResponse generateHtmlMessage(@RequestBody(required = false) FormatSampleRequest req) {
+    public FormatMessage generateHtmlMessage(@RequestBody(required = false) FormatSampleRequest req) {
         PaymentTransaction tx = resolveTransaction(req != null ? req.txId() : null);
-        return formatFactory.buildHtmlMessage(
+        return composer.composeHtmlFormat(
                 tx,
                 req != null ? req.recipientEmail() : null,
                 req != null ? req.note() : null
@@ -77,9 +71,9 @@ public class TeamsFormatController {
     }
 
     @PostMapping("/activity-feed")
-    public FormatShowcaseResponse generateActivityFeed(@RequestBody(required = false) FormatSampleRequest req) {
+    public FormatMessage generateActivityFeed(@RequestBody(required = false) FormatSampleRequest req) {
         PaymentTransaction tx = resolveTransaction(req != null ? req.txId() : null);
-        return formatFactory.buildActivityFeedAlert(
+        return composer.composeActivityFeedFormat(
                 tx,
                 req != null ? req.recipientEmail() : null,
                 req != null ? req.note() : null
@@ -87,9 +81,9 @@ public class TeamsFormatController {
     }
 
     @PostMapping("/urgent-alert")
-    public FormatShowcaseResponse generateUrgentAlert(@RequestBody(required = false) FormatSampleRequest req) {
+    public FormatMessage generateUrgentAlert(@RequestBody(required = false) FormatSampleRequest req) {
         PaymentTransaction tx = resolveTransaction(req != null ? req.txId() : null);
-        return formatFactory.buildUrgentTagAlert(
+        return composer.composeUrgentFormat(
                 tx,
                 req != null ? req.teamTagName() : null,
                 req != null ? req.note() : null
@@ -97,15 +91,15 @@ public class TeamsFormatController {
     }
 
     @PostMapping("/receipt-card")
-    public FormatShowcaseResponse generateReceiptCard(@RequestBody(required = false) FormatSampleRequest req) {
+    public FormatMessage generateReceiptCard(@RequestBody(required = false) FormatSampleRequest req) {
         PaymentTransaction tx = resolveTransaction(req != null ? req.txId() : null);
-        return formatFactory.buildReceiptCard(tx);
+        return composer.composeReceiptFormat(tx);
     }
 
     @PostMapping("/hero-card")
-    public FormatShowcaseResponse generateHeroCard(@RequestBody(required = false) FormatSampleRequest req) {
+    public FormatMessage generateHeroCard(@RequestBody(required = false) FormatSampleRequest req) {
         PaymentTransaction tx = resolveTransaction(req != null ? req.txId() : null);
-        return formatFactory.buildHeroCard(tx);
+        return composer.composeHeroFormat(tx);
     }
 
     private PaymentTransaction resolveTransaction(String txId) {

@@ -1,20 +1,17 @@
 package com.example.teams.controller;
 
-import com.example.teams.cards.TeamsCardFactory;
-import com.example.teams.cards.TeamsFormatFactory;
-import com.example.teams.client.TeamsWebhookClient;
-import com.example.teams.config.TeamsProperties;
-import com.example.teams.domain.EventType;
+import com.example.teams.TeamsNotifier;
+import com.example.teams.cards.FormatMessage;
+import com.example.teams.domain.BillingEventType;
 import com.example.teams.domain.PaymentTransaction;
 import com.example.teams.dto.AuthorizePaymentRequest;
 import com.example.teams.dto.BillingEventResponse;
 import com.example.teams.dto.CapturePaymentRequest;
-import com.example.teams.dto.FormatShowcaseResponse;
 import com.example.teams.dto.RefundDecisionCallbackRequest;
 import com.example.teams.dto.RefundPaymentRequest;
 import com.example.teams.security.LinkVerificationResult;
-import com.example.teams.security.TeamsLinkSigner;
 import com.example.teams.service.BillingOperationsService;
+import com.example.teams.service.BillingTeamsComposer;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -39,23 +36,17 @@ public class OpsViewController {
     ) {}
 
     private final BillingOperationsService billingService;
-    private final TeamsWebhookClient webhookClient;
-    private final TeamsLinkSigner linkSigner;
-    private final TeamsProperties properties;
-    private final TeamsFormatFactory formatFactory;
+    private final BillingTeamsComposer composer;
+    private final TeamsNotifier teamsNotifier;
 
     public OpsViewController(
             BillingOperationsService billingService,
-            TeamsWebhookClient webhookClient,
-            TeamsLinkSigner linkSigner,
-            TeamsProperties properties,
-            TeamsFormatFactory formatFactory
+            BillingTeamsComposer composer,
+            TeamsNotifier teamsNotifier
     ) {
         this.billingService = billingService;
-        this.webhookClient = webhookClient;
-        this.linkSigner = linkSigner;
-        this.properties = properties;
-        this.formatFactory = formatFactory;
+        this.composer = composer;
+        this.teamsNotifier = teamsNotifier;
     }
 
     @GetMapping("/ops/formats")
@@ -68,16 +59,16 @@ public class OpsViewController {
         long supplyAmount = Math.round(selectedTx.getAmount() / 1.1);
         long vatAmount = selectedTx.getAmount() - supplyAmount;
 
-        FormatShowcaseResponse htmlFmt = formatFactory.buildHtmlMessage(selectedTx, "billing-oncall@company.com", null);
-        FormatShowcaseResponse feedFmt = formatFactory.buildActivityFeedAlert(selectedTx, "approver@company.com", null);
-        FormatShowcaseResponse urgentFmt = formatFactory.buildUrgentTagAlert(selectedTx, "결제운영당직", null);
-        FormatShowcaseResponse receiptFmt = formatFactory.buildReceiptCard(selectedTx);
-        FormatShowcaseResponse heroFmt = formatFactory.buildHeroCard(selectedTx);
-        FormatShowcaseResponse adaptiveFmt = formatFactory.buildAdaptiveCardComparison(selectedTx);
+        FormatMessage htmlFmt = composer.composeHtmlFormat(selectedTx, "billing-oncall@company.com", null);
+        FormatMessage feedFmt = composer.composeActivityFeedFormat(selectedTx, "approver@company.com", null);
+        FormatMessage urgentFmt = composer.composeUrgentFormat(selectedTx, "결제운영당직", null);
+        FormatMessage receiptFmt = composer.composeReceiptFormat(selectedTx);
+        FormatMessage heroFmt = composer.composeHeroFormat(selectedTx);
+        FormatMessage adaptiveFmt = composer.composeAdaptiveComparisonFormat(selectedTx);
 
         model.addAttribute("transactions", transactions);
         model.addAttribute("tx", selectedTx);
-        model.addAttribute("approvedAtKst", TeamsCardFactory.formatKst(selectedTx.getApprovedAt()));
+        model.addAttribute("approvedAtKst", teamsNotifier.cards().formatTimestamp(selectedTx.getApprovedAt()));
         model.addAttribute("supplyAmount", supplyAmount);
         model.addAttribute("vatAmount", vatAmount);
         model.addAttribute("htmlFmt", htmlFmt);
@@ -96,30 +87,26 @@ public class OpsViewController {
         long now = Instant.now().getEpochSecond();
 
         for (PaymentTransaction tx : transactions) {
-            String validUrl = linkSigner.createSignedTransactionUrl(
-                    tx.getTxId(), EventType.PAYMENT_AUTHORIZED.name(), "view");
-            // 서명된 URL의 action 파라미터를 임의로 변조한 테스트 링크
+            String validUrl = teamsNotifier.createSignedUrl(
+                    tx.getTxId(), BillingEventType.PAYMENT_AUTHORIZED.name(), "view");
             String tamperedUrl = validUrl.replace("action=view", "action=admin_override");
-            // 과거 시각으로 서명하여 만료(EXPIRED) 상태를 재현하는 테스트 링크
-            String expiredUrl = linkSigner.createSignedTransactionUrl(
-                    tx.getTxId(), EventType.PAYMENT_AUTHORIZED.name(), "view", now - 7200, now - 600);
+            String expiredUrl = teamsNotifier.linkSigner().createSignedEntryUrl(
+                    tx.getTxId(), BillingEventType.PAYMENT_AUTHORIZED.name(), "view", now - 7200, now - 600);
             String directUrl = "/ops/transactions/" + tx.getTxId();
 
             demoLinksByTx.put(tx.getTxId(), new DemoLinks(validUrl, tamperedUrl, expiredUrl, directUrl));
         }
 
-        boolean webhookConfigured = properties.getWebhookUrl() != null && !properties.getWebhookUrl().isBlank();
+        String webhookUrl = teamsNotifier.settings().getWebhookUrl();
+        boolean webhookConfigured = webhookUrl != null && !webhookUrl.isBlank();
         model.addAttribute("webhookConfigured", webhookConfigured);
         model.addAttribute("transactions", transactions);
         model.addAttribute("demoLinksByTx", demoLinksByTx);
-        model.addAttribute("outbox", webhookClient.getOutbox());
-        model.addAttribute("linkTtlMinutes", properties.getLinkTtlMinutes());
+        model.addAttribute("outbox", teamsNotifier.webhookClient().getOutbox());
+        model.addAttribute("linkTtlMinutes", teamsNotifier.settings().getLinkTtlMinutes());
         return "ops-launcher";
     }
 
-    /**
-     * Teams Adaptive Card의 Action.OpenUrl 링크를 클릭했을 때 진입하는 검증 & 운영 처리 페이지
-     */
     @GetMapping("/ops/transactions/{txId}")
     public String transactionDetail(
             @PathVariable String txId,
@@ -131,13 +118,14 @@ public class OpsViewController {
             @RequestParam(required = false) String sig,
             Model model
     ) {
-        LinkVerificationResult verification = linkSigner.verify(txId, src, cardType, action, iat, exp, sig);
+        LinkVerificationResult verification = teamsNotifier.verifySignedLink(txId, src, cardType, action, iat, exp, sig);
         PaymentTransaction tx = billingService.findTransaction(txId).orElse(null);
 
         long now = Instant.now().getEpochSecond();
-        String freshValidUrl = linkSigner.createSignedTransactionUrl(txId, "OPS_REFRESH", "view");
+        String freshValidUrl = teamsNotifier.createSignedUrl(txId, "OPS_REFRESH", "view");
         String tamperedSampleUrl = freshValidUrl.replace("src=msteams", "src=msteams_hacked");
-        String expiredSampleUrl = linkSigner.createSignedTransactionUrl(txId, "OPS_REFRESH", "view", now - 7200, now - 300);
+        String expiredSampleUrl = teamsNotifier.linkSigner().createSignedEntryUrl(
+                txId, "OPS_REFRESH", "view", now - 7200, now - 300);
 
         model.addAttribute("txId", txId);
         model.addAttribute("tx", tx);
@@ -148,8 +136,8 @@ public class OpsViewController {
         model.addAttribute("iat", iat);
         model.addAttribute("exp", exp);
         model.addAttribute("sig", sig);
-        model.addAttribute("issuedAtKst", TeamsCardFactory.formatKst(verification.issuedAt()));
-        model.addAttribute("expiresAtKst", TeamsCardFactory.formatKst(verification.expiresAt()));
+        model.addAttribute("issuedAtKst", teamsNotifier.cards().formatTimestamp(verification.issuedAt()));
+        model.addAttribute("expiresAtKst", teamsNotifier.cards().formatTimestamp(verification.expiresAt()));
         model.addAttribute("freshValidUrl", freshValidUrl);
         model.addAttribute("tamperedSampleUrl", tamperedSampleUrl);
         model.addAttribute("expiredSampleUrl", expiredSampleUrl);
@@ -194,9 +182,6 @@ public class OpsViewController {
         return "redirect:/ops";
     }
 
-    /**
-     * 검증된 Teams 링크 화면 내에서 [매입 확정] 실행
-     */
     @PostMapping("/ops/transactions/{txId}/capture")
     public String executeCaptureFromVerifiedLink(
             @PathVariable String txId,
@@ -208,7 +193,7 @@ public class OpsViewController {
             @RequestParam String sig,
             RedirectAttributes redirectAttributes
     ) {
-        LinkVerificationResult verification = linkSigner.verify(txId, src, cardType, action, iat, exp, sig);
+        LinkVerificationResult verification = teamsNotifier.verifySignedLink(txId, src, cardType, action, iat, exp, sig);
         if (!verification.isVerified()) {
             redirectAttributes.addFlashAttribute("errorMessage",
                     "Teams 서명 링크 검증 실패로 작업이 거부되었습니다: " + verification.status().getBadgeLabel());
@@ -222,9 +207,6 @@ public class OpsViewController {
         return "redirect:" + res.signedDetailUrl();
     }
 
-    /**
-     * 검증된 Teams 링크 화면 내에서 [즉시 환불] 실행
-     */
     @PostMapping("/ops/transactions/{txId}/refund")
     public String executeRefundFromVerifiedLink(
             @PathVariable String txId,
@@ -238,7 +220,7 @@ public class OpsViewController {
             @RequestParam String sig,
             RedirectAttributes redirectAttributes
     ) {
-        LinkVerificationResult verification = linkSigner.verify(txId, src, cardType, action, iat, exp, sig);
+        LinkVerificationResult verification = teamsNotifier.verifySignedLink(txId, src, cardType, action, iat, exp, sig);
         if (!verification.isVerified()) {
             redirectAttributes.addFlashAttribute("errorMessage",
                     "Teams 서명 링크 검증 실패로 작업이 거부되었습니다: " + verification.status().getBadgeLabel());
@@ -253,13 +235,10 @@ public class OpsViewController {
             return "redirect:" + res.signedDetailUrl();
         } catch (RuntimeException ex) {
             redirectAttributes.addFlashAttribute("errorMessage", ex.getMessage());
-            return "redirect:" + linkSigner.createSignedTransactionUrl(txId, cardType, action, iat, exp);
+            return "redirect:" + teamsNotifier.linkSigner().createSignedEntryUrl(txId, cardType, action, iat, exp);
         }
     }
 
-    /**
-     * 검증된 Teams 링크 화면 내에서 대기 중인 환불 요청 [승인 / 반려]
-     */
     @PostMapping("/ops/transactions/{txId}/refund-decision")
     public String decidePendingRefundFromVerifiedLink(
             @PathVariable String txId,
@@ -273,7 +252,7 @@ public class OpsViewController {
             @RequestParam String sig,
             RedirectAttributes redirectAttributes
     ) {
-        LinkVerificationResult verification = linkSigner.verify(txId, src, cardType, action, iat, exp, sig);
+        LinkVerificationResult verification = teamsNotifier.verifySignedLink(txId, src, cardType, action, iat, exp, sig);
         if (!verification.isVerified()) {
             redirectAttributes.addFlashAttribute("errorMessage",
                     "Teams 서명 링크 검증 실패로 작업이 거부되었습니다: " + verification.status().getBadgeLabel());

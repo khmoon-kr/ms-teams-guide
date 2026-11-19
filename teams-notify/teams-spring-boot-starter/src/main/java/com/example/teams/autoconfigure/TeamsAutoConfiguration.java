@@ -15,9 +15,13 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 
+import java.net.http.HttpClient;
+import java.time.Clock;
+import java.time.Duration;
+
 /**
  * 다른 Spring Boot 프로젝트에서 의존성만 추가하면 MS Teams 알림·서명 컴포넌트를 자동으로 빈 등록해 주는 AutoConfiguration.
- * 모든 빈에 {@link ConditionalOnMissingBean}이 선언되어 있어 사용처에서 원하는 컴포넌트만 손쉽게 재정의할 수 있습니다.
+ * 모든 빈에 {@link ConditionalOnMissingBean}이 선언되어 있으며, 소비 앱의 {@link Clock}, {@link ObjectMapper}, {@link HttpClient} 빈을 우선 존중합니다. (규칙 4)
  */
 @AutoConfiguration
 @EnableConfigurationProperties(TeamsProperties.class)
@@ -31,8 +35,9 @@ public class TeamsAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public TeamsLinkSigner teamsLinkSigner(TeamsSettings settings) {
-        return new TeamsLinkSigner(settings);
+    public TeamsLinkSigner teamsLinkSigner(TeamsSettings settings, ObjectProvider<Clock> clockProvider) {
+        Clock clock = clockProvider.getIfAvailable(Clock::systemUTC);
+        return new TeamsLinkSigner(settings, clock);
     }
 
     @Bean
@@ -43,33 +48,38 @@ public class TeamsAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public TeamsCardFactory teamsCardFactory(TeamsLinkSigner linkSigner) {
-        return new TeamsCardFactory(linkSigner);
+    public TeamsCardFactory teamsCardFactory(TeamsLinkSigner linkSigner, TeamsSettings settings) {
+        return new TeamsCardFactory(linkSigner, settings.getDisplayZone());
     }
 
     @Bean
     @ConditionalOnMissingBean
     public TeamsFormatFactory teamsFormatFactory(
             TeamsLinkSigner linkSigner,
-            TeamsCardFactory adaptiveCardFactory,
-            ObjectProvider<ObjectMapper> objectMapperProvider
+            ObjectProvider<ObjectMapper> objectMapperProvider,
+            ObjectProvider<Clock> clockProvider
     ) {
         ObjectMapper mapper = objectMapperProvider.getIfAvailable();
-        return mapper != null
-                ? new TeamsFormatFactory(linkSigner, adaptiveCardFactory, mapper)
-                : new TeamsFormatFactory(linkSigner, adaptiveCardFactory);
+        Clock clock = clockProvider.getIfAvailable(Clock::systemUTC);
+        return new TeamsFormatFactory(linkSigner, mapper, clock);
     }
 
     @Bean
     @ConditionalOnMissingBean
     public TeamsWebhookClient teamsWebhookClient(
             TeamsSettings settings,
-            ObjectProvider<ObjectMapper> objectMapperProvider
+            ObjectProvider<ObjectMapper> objectMapperProvider,
+            ObjectProvider<HttpClient> httpClientProvider,
+            ObjectProvider<Clock> clockProvider
     ) {
         ObjectMapper mapper = objectMapperProvider.getIfAvailable();
-        return mapper != null
-                ? new TeamsWebhookClient(settings, mapper)
-                : new TeamsWebhookClient(settings);
+        Clock clock = clockProvider.getIfAvailable(Clock::systemUTC);
+        HttpClient httpClient = httpClientProvider.getIfAvailable(() ->
+                HttpClient.newBuilder()
+                        .connectTimeout(Duration.ofSeconds(settings.getConnectTimeoutSeconds()))
+                        .build()
+        );
+        return new TeamsWebhookClient(settings, mapper, httpClient, clock);
     }
 
     @Bean

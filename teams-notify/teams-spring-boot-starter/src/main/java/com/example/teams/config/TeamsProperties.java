@@ -2,6 +2,8 @@ package com.example.teams.config;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
+import java.time.ZoneId;
+
 @ConfigurationProperties(prefix = "teams")
 public class TeamsProperties {
 
@@ -14,8 +16,12 @@ public class TeamsProperties {
     private int connectTimeoutSeconds = 5;
     private int requestTimeoutSeconds = 10;
     private int maxOutboxSize = 50;
+    private String displayZone = "Asia/Seoul";
 
     public TeamsSettings toSettings() {
+        ZoneId resolvedZone = (displayZone != null && !displayZone.isBlank())
+                ? ZoneId.of(displayZone.trim())
+                : ZoneId.of("Asia/Seoul");
         return TeamsSettings.builder()
                 .webhookUrl(webhookUrl)
                 .baseUrl(baseUrl)
@@ -26,6 +32,7 @@ public class TeamsProperties {
                 .connectTimeoutSeconds(connectTimeoutSeconds)
                 .requestTimeoutSeconds(requestTimeoutSeconds)
                 .maxOutboxSize(maxOutboxSize)
+                .displayZone(resolvedZone)
                 .build();
     }
 
@@ -99,5 +106,13 @@ public class TeamsProperties {
 
     public void setMaxOutboxSize(int maxOutboxSize) {
         this.maxOutboxSize = maxOutboxSize;
+    }
+
+    public String getDisplayZone() {
+        return displayZone;
+    }
+
+    public void setDisplayZone(String displayZone) {
+        this.displayZone = displayZone;
     }
 }

@@ -2,7 +2,7 @@ package com.example.teams.service;
 
 import com.example.teams.TeamsNotifier;
 import com.example.teams.client.TeamsWebhookClient.TeamsDispatchRecord;
-import com.example.teams.domain.EventType;
+import com.example.teams.domain.BillingEventType;
 import com.example.teams.domain.PaymentTransaction;
 import com.example.teams.dto.AuthorizePaymentRequest;
 import com.example.teams.dto.BillingEventResponse;
@@ -33,11 +33,13 @@ public class BillingOperationsService {
     private static final DateTimeFormatter DATE_COMPACT = DateTimeFormatter.ofPattern("yyyyMMdd");
 
     private final TeamsNotifier teamsNotifier;
+    private final BillingTeamsComposer composer;
     private final Map<String, PaymentTransaction> ledger = new ConcurrentHashMap<>();
     private final AtomicInteger sequence = new AtomicInteger(1001);
 
-    public BillingOperationsService(TeamsNotifier teamsNotifier) {
+    public BillingOperationsService(TeamsNotifier teamsNotifier, BillingTeamsComposer composer) {
         this.teamsNotifier = teamsNotifier;
+        this.composer = composer;
     }
 
     @PostConstruct
@@ -73,25 +75,31 @@ public class BillingOperationsService {
         );
         ledger.put(txId, tx);
 
-        TeamsDispatchRecord dispatch = teamsNotifier.notifyPaymentAuthorized(tx);
-        return toResponse(tx, dispatch);
+        TeamsDispatchRecord dispatch = teamsNotifier.sendCard(txId, composer.composeAuthorizedCard(tx));
+        return toResponse(tx, BillingEventType.PAYMENT_AUTHORIZED, dispatch);
     }
 
     public BillingEventResponse capturePayment(CapturePaymentRequest req) {
         PaymentTransaction tx = getRequiredTransaction(req.txId());
         Instant processedAt = req.processedAt() != null ? req.processedAt() : Instant.now();
 
+        BillingEventType eventType;
         if (req.success()) {
             tx.markCaptured(processedAt);
+            eventType = BillingEventType.CAPTURE_SUCCEEDED;
         } else {
             String reason = (req.failureReason() != null && !req.failureReason().isBlank())
                     ? req.failureReason().trim()
                     : "PG_CAPTURE_TIMEOUT (매입 게이트웨이 응답 지연)";
             tx.markCaptureFailed(reason, processedAt);
+            eventType = BillingEventType.CAPTURE_FAILED;
         }
 
-        TeamsDispatchRecord dispatch = teamsNotifier.notifyCaptureResult(tx, req.success(), processedAt);
-        return toResponse(tx, dispatch);
+        TeamsDispatchRecord dispatch = teamsNotifier.sendCard(
+                tx.getTxId(),
+                composer.composeCaptureCard(tx, req.success(), processedAt)
+        );
+        return toResponse(tx, eventType, dispatch);
     }
 
     public BillingEventResponse refundPayment(RefundPaymentRequest req) {
@@ -104,16 +112,20 @@ public class BillingOperationsService {
                 ? req.requireApproval()
                 : req.refundAmount() >= AUTO_APPROVAL_THRESHOLD_KRW;
 
-        TeamsDispatchRecord dispatch;
+        BillingEventType eventType;
         if (needApproval) {
             tx.requestRefund(req.refundAmount(), req.reason().trim(), actor);
-            dispatch = teamsNotifier.notifyRefund(tx, EventType.REFUND_REQUESTED, req.refundAmount(), req.reason().trim(), actor);
+            eventType = BillingEventType.REFUND_REQUESTED;
         } else {
             tx.completeRefund(req.refundAmount(), req.reason().trim(), actor);
-            dispatch = teamsNotifier.notifyRefund(tx, EventType.REFUND_COMPLETED, req.refundAmount(), req.reason().trim(), actor);
+            eventType = BillingEventType.REFUND_COMPLETED;
         }
 
-        return toResponse(tx, dispatch);
+        TeamsDispatchRecord dispatch = teamsNotifier.sendCard(
+                tx.getTxId(),
+                composer.composeRefundCard(tx, eventType, req.refundAmount(), req.reason().trim(), actor)
+        );
+        return toResponse(tx, eventType, dispatch);
     }
 
     public BillingEventResponse decidePendingRefund(RefundDecisionCallbackRequest req) {
@@ -130,16 +142,20 @@ public class BillingOperationsService {
                 : (req.approved() ? "Teams 인증 링크에서 환불 승인" : "Teams 인증 링크에서 환불 반려");
 
         long targetAmount = tx.getPendingRefundAmount();
-        TeamsDispatchRecord dispatch;
+        BillingEventType eventType;
         if (req.approved()) {
             tx.completeRefund(targetAmount, comment, actor);
-            dispatch = teamsNotifier.notifyRefund(tx, EventType.REFUND_COMPLETED, targetAmount, comment, actor);
+            eventType = BillingEventType.REFUND_COMPLETED;
         } else {
             tx.rejectPendingRefund(actor, comment);
-            dispatch = teamsNotifier.notifyRefund(tx, EventType.REFUND_REJECTED, targetAmount, comment, actor);
+            eventType = BillingEventType.REFUND_REJECTED;
         }
 
-        return toResponse(tx, dispatch);
+        TeamsDispatchRecord dispatch = teamsNotifier.sendCard(
+                tx.getTxId(),
+                composer.composeRefundCard(tx, eventType, targetAmount, comment, actor)
+        );
+        return toResponse(tx, eventType, dispatch);
     }
 
     public PaymentTransaction getRequiredTransaction(String txId) {
@@ -165,11 +181,15 @@ public class BillingOperationsService {
         return "TX-" + datePart + "-" + sequence.getAndIncrement();
     }
 
-    private BillingEventResponse toResponse(PaymentTransaction tx, TeamsDispatchRecord dispatch) {
+    private BillingEventResponse toResponse(
+            PaymentTransaction tx,
+            BillingEventType eventType,
+            TeamsDispatchRecord dispatch
+    ) {
         return new BillingEventResponse(
                 dispatch.dispatchId(),
                 tx.getTxId(),
-                dispatch.eventType(),
+                eventType,
                 tx.getStatus(),
                 tx.getAmount(),
                 tx.getRemainingAmount(),

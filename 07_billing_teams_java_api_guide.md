@@ -55,20 +55,21 @@ http://localhost:8080/ops/transactions/TX-20261119-1000
 
 ```text
 teams-notify/                               (Parent POM)
-├── teams-core/                             [순수 Java 17 라이브러리 JAR — Spring 의존성 0개]
+├── teams-core/                             [순수 Java 17 범용 라이브러리 JAR — Spring·도메인 의존성 0개]
 │   ├── TeamsNotifier                       (단일 진입점 Facade)
-│   ├── TeamsSettings                       (Builder 기반 설정, entryPathTemplate 커스텀 지원)
-│   ├── TransactionView / TransactionSnapshot (외부 프로젝트 자체 엔티티/DTO 연동 인터페이스)
-│   ├── TeamsCardFactory                    (Adaptive Card v1.4 + 커스텀 카드 조립기)
+│   ├── TeamsSettings                       (Builder 기반 불변 설정, 최소 16B 시크릿 검증, ZoneId 지원)
+│   ├── AdaptiveCardSpec / FormatMessage    (도메인 중립 불변 스펙 & 방어적 복사 결과 모델)
+│   ├── TeamsCardFactory                    (Adaptive Card v1.4 선언적 조립기)
 │   ├── TeamsFormatFactory                  (Rich HTML, Activity Feed, Urgent+@Tag, Receipt, Hero)
 │   ├── TeamsLinkSigner / OutgoingWebhookVerifier (JDK 표준 HmacSHA256 서명·검증)
-│   └── TeamsWebhookClient                  (JDK 17 HttpClient 기반 다중 채널 전송기)
+│   └── TeamsWebhookClient                  (JDK 17 HttpClient 기반 다중 채널 전송기 · URL 마스킹)
 │
 ├── teams-spring-boot-starter/              [Spring Boot 3 AutoConfiguration 스타터 JAR]
 │   ├── TeamsProperties                     (application.yml의 teams.* 자동 바인딩)
-│   └── TeamsAutoConfiguration              (@ConditionalOnMissingBean 기반 자동 빈 등록)
+│   └── TeamsAutoConfiguration              (@ConditionalOnMissingBean + Clock/ObjectMapper/HttpClient 존중)
 │
-└── teams-demo-app/                         [테스트·검증용 REST API & Thymeleaf 웹 콘솔 앱]
+└── teams-demo-app/                         [빌링 시나리오 데모 REST API & Thymeleaf 웹 콘솔 앱]
+    ├── BillingTeamsComposer                (범용 TeamsNotifier 위에 빌링 도메인 알림을 조립하는 예제)
     └── 시뮬레이터(/ops), 6종 포맷 비교(/ops/formats), 서명 링크 검증 화면(/ops/transactions/{txId})
 ```
 
@@ -92,8 +93,8 @@ teams-notify/                               (Parent POM)
 teams:
   webhook-url: ${TEAMS_WEBHOOK_URL:}
   base-url: https://admin.our-service.com
-  entry-path-template: /admin/payments/{txId}   # 우리 서비스의 실제 상세 화면 경로로 지정
-  link-secret: ${TEAMS_LINK_SECRET}
+  entry-path-template: /admin/orders/{id}       # 우리 서비스의 실제 상세 화면 경로로 지정
+  link-secret: ${TEAMS_LINK_SECRET}             # 최소 16바이트 이상 필수
   link-ttl-minutes: 30
   max-outbox-size: 0                            # 실서비스에서 메모리 Outbox 보관이 불필요하면 0
 ```
@@ -102,29 +103,29 @@ teams:
 ```java
 @Service
 @RequiredArgsConstructor
-public class PaymentSettlementService {
+public class OrderAlertService {
 
-    private final TeamsNotifier teamsNotifier; // 자동 빈 등록됨!
+    private final TeamsNotifier teams; // 자동 빈 등록됨!
 
-    public void onPaymentCaptured(OrderPaymentEntity entity) {
-        var snapshot = TransactionSnapshot.builder()
-                .txId(entity.getTxNo())
-                .orderId(entity.getOrderNo())
-                .merchantName(entity.getStoreName())
-                .amount(entity.getPaidAmount())
-                .paymentMethod(entity.getCardName())
-                .authCode(entity.getApprovalNo())
-                .approvedAt(entity.getApprovedAt())
-                .status(TransactionStatus.CAPTURED)
+    public void onOrderCompleted(String orderNo, String title, String amountText) {
+        AdaptiveCardSpec spec = AdaptiveCardSpec.builder()
+                .eventType("ORDER_COMPLETED")
+                .bannerStyle(BannerStyle.GOOD)
+                .badgeLabel("ORDER COMPLETED · 주문 확정")
+                .headline(amountText)
+                .headlineColor(TextColor.GOOD)
+                .subtitle(title + " 주문 처리가 완료되었습니다.")
+                .addFact("주문번호", orderNo)
+                .addAction(teams.cards().signedEntryButton("어드민 상세 열기", orderNo, "ORDER_COMPLETED", "view"))
                 .build();
 
-        // 1) 기본 Adaptive Card 발송
-        teamsNotifier.notifyCaptureResult(snapshot, true, Instant.now());
+        // 1) 선언적 Adaptive Card 발송
+        teams.sendCard(orderNo, spec);
 
         // 2) 임의의 자체 어드민 URL에 Teams 유입 검증 서명만 붙이고 싶을 때
-        String signedAdminUrl = teamsNotifier.signCustomUrl(
+        String signedAdminUrl = teams.signCustomUrl(
                 "https://admin.our-service.com/settlements/991?tab=detail",
-                entity.getTxNo(), "SETTLEMENT_ALERT", "approve"
+                orderNo, "SETTLEMENT_ALERT", "approve"
         );
     }
 }
@@ -132,21 +133,21 @@ public class PaymentSettlementService {
 
 #### 케이스 B: Spring이 없는 일반 Java 17 / 배치 / 타 프레임워크에서 사용 (`teams-core`)
 
-`teams-core`는 `jackson-databind`와 `slf4j-api`만 참조하며 Spring 의존성이 전혀 없습니다.
+`teams-core`는 `jackson-databind`와 `slf4j-api`만 참조하며 Spring 의존성과 특정 비즈니스 도메인 코드가 전혀 없습니다.
 
 ```java
 TeamsNotifier teams = TeamsNotifier.create(
         TeamsSettings.builder()
                 .webhookUrl(System.getenv("TEAMS_WEBHOOK_URL"))
                 .baseUrl("https://admin.our-service.com")
-                .entryPathTemplate("/admin/payments/{txId}")
+                .entryPathTemplate("/admin/orders/{id}")
                 .linkSecret(System.getenv("TEAMS_LINK_SECRET"))
                 .maxOutboxSize(0)
                 .build()
 );
 
 // 검증 시: 쿼리 파라미터 Map만 넘기면 VERIFIED_TEAMS / EXPIRED / INVALID_SIGNATURE 즉시 판별
-LinkVerificationResult verified = teams.verifySignedQueryMap("TX-1001", queryParamMap);
+LinkVerificationResult verified = teams.verifySignedQueryMap("ORD-1001", queryParamMap);
 ```
 
 ---

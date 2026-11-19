@@ -1,17 +1,20 @@
 package com.example.teams.config;
 
+import java.nio.charset.StandardCharsets;
+import java.time.ZoneId;
 import java.util.Objects;
 
 /**
- * 프레임워크 비종속(Pure Java) MS Teams 알림 및 서명 링크 설정 객체.
- * Spring Boot 환경에서는 TeamsProperties를 통해 자동 생성되며,
- * 일반 Java / 타 프레임워크 환경에서는 {@link #builder()}로 직접 생성할 수 있습니다.
+ * 프레임워크 비종속(Pure Java) MS Teams 알림 및 서명 링크 불변 설정 객체.
+ * Spring Boot 환경에서는 {@code TeamsProperties}를 통해 자동 생성되며,
+ * 일반 Java / 타 프레임워크 환경에서는 {@link #builder()}로 직접 생성합니다.
  */
 public final class TeamsSettings {
 
     public static final String DEFAULT_BASE_URL = "http://localhost:8080";
-    public static final String DEFAULT_ENTRY_PATH_TEMPLATE = "/ops/transactions/{txId}";
-    public static final String DEFAULT_DEV_LINK_SECRET = "dev-billing-teams-hmac-secret-key-change-in-prod-2026";
+    public static final String DEFAULT_ENTRY_PATH_TEMPLATE = "/ops/items/{id}";
+    public static final String DEFAULT_DEV_LINK_SECRET = "dev-teams-notify-hmac-secret-key-change-in-prod";
+    public static final int MIN_SECRET_BYTES = 16;
 
     private final String webhookUrl;
     private final String baseUrl;
@@ -22,6 +25,7 @@ public final class TeamsSettings {
     private final int connectTimeoutSeconds;
     private final int requestTimeoutSeconds;
     private final int maxOutboxSize;
+    private final ZoneId displayZone;
 
     private TeamsSettings(Builder builder) {
         this.webhookUrl = builder.webhookUrl != null ? builder.webhookUrl.trim() : "";
@@ -31,15 +35,23 @@ public final class TeamsSettings {
         this.entryPathTemplate = (builder.entryPathTemplate != null && !builder.entryPathTemplate.isBlank())
                 ? builder.entryPathTemplate.trim()
                 : DEFAULT_ENTRY_PATH_TEMPLATE;
-        this.linkSecret = Objects.requireNonNull(builder.linkSecret, "linkSecret must not be null");
-        if (this.linkSecret.isBlank()) {
+
+        String rawSecret = Objects.requireNonNull(builder.linkSecret, "linkSecret must not be null");
+        if (rawSecret.isBlank()) {
             throw new IllegalArgumentException("linkSecret must not be blank");
         }
+        if (rawSecret.getBytes(StandardCharsets.UTF_8).length < MIN_SECRET_BYTES) {
+            throw new IllegalArgumentException(
+                    "linkSecret must be at least " + MIN_SECRET_BYTES + " bytes for HMAC-SHA256 security");
+        }
+        this.linkSecret = rawSecret;
+
         this.linkTtlMinutes = builder.linkTtlMinutes > 0 ? builder.linkTtlMinutes : 60L;
         this.outgoingWebhookSecret = builder.outgoingWebhookSecret != null ? builder.outgoingWebhookSecret.trim() : "";
         this.connectTimeoutSeconds = builder.connectTimeoutSeconds > 0 ? builder.connectTimeoutSeconds : 5;
         this.requestTimeoutSeconds = builder.requestTimeoutSeconds > 0 ? builder.requestTimeoutSeconds : 10;
         this.maxOutboxSize = Math.max(0, builder.maxOutboxSize);
+        this.displayZone = builder.displayZone != null ? builder.displayZone : ZoneId.of("Asia/Seoul");
     }
 
     public static Builder builder() {
@@ -62,6 +74,10 @@ public final class TeamsSettings {
         return linkSecret;
     }
 
+    public boolean isUsingDefaultDevSecret() {
+        return DEFAULT_DEV_LINK_SECRET.equals(linkSecret);
+    }
+
     public long getLinkTtlMinutes() {
         return linkTtlMinutes;
     }
@@ -82,6 +98,10 @@ public final class TeamsSettings {
         return maxOutboxSize;
     }
 
+    public ZoneId getDisplayZone() {
+        return displayZone;
+    }
+
     public static final class Builder {
         private String webhookUrl = "";
         private String baseUrl = DEFAULT_BASE_URL;
@@ -92,6 +112,7 @@ public final class TeamsSettings {
         private int connectTimeoutSeconds = 5;
         private int requestTimeoutSeconds = 10;
         private int maxOutboxSize = 50;
+        private ZoneId displayZone = ZoneId.of("Asia/Seoul");
 
         private Builder() {}
 
@@ -106,7 +127,7 @@ public final class TeamsSettings {
         }
 
         /**
-         * 서명 링크 생성 시 사용할 경로 템플릿 (예: "/admin/payments/{txId}" 또는 "/ops/transactions/{txId}")
+         * 서명 링크 생성 시 사용할 경로 템플릿 (예: "/admin/orders/{id}" 또는 "/ops/items/{id}")
          */
         public Builder entryPathTemplate(String entryPathTemplate) {
             this.entryPathTemplate = entryPathTemplate;
@@ -143,6 +164,11 @@ public final class TeamsSettings {
          */
         public Builder maxOutboxSize(int maxOutboxSize) {
             this.maxOutboxSize = maxOutboxSize;
+            return this;
+        }
+
+        public Builder displayZone(ZoneId displayZone) {
+            this.displayZone = displayZone;
             return this;
         }
 
