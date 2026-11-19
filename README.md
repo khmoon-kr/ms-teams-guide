@@ -33,6 +33,7 @@ Microsoft Teams의 **채널(Channel)** 및 **그룹 채팅(Group Chat)** 을 대
 | **04** | [04_workflows_webhook_and_messaging_guide.md](./04_workflows_webhook_and_messaging_guide.md) | **Workflows 기반 채널/그룹 채팅 메시지 구현**: Webhook 수신 트리거 설정·보안·`Parse JSON` 매핑, 카드 전송 및 양방향 응답 대기(`wait for a response` vs 분리형 리스너), 실무 주의사항(Gotchas) |
 | **05** | [05_workflows_create_channel_and_group_chat.md](./05_workflows_create_channel_and_group_chat.md) | **Workflows로 채널·그룹 채팅 직접 생성 및 연동**: `Create a chat`(그룹 채팅 생성), `Create a channel`(표준/비공개/공유 채널 생성), 멤버 추가, 동적 `Conversation ID` / `Channel ID` 바인딩, 비공개 채널 우회 전략 및 E2E 실전 시나리오 |
 | **06** | [06_workflows_ui_and_expressions_step_by_step.md](./06_workflows_ui_and_expressions_step_by_step.md) | **Workflows UI 클릭 순서 · 흐름 편집기 · 수식(`fx`) 완전 정복**: 채팅방에서 워크플로 선택·생성, `Send each adaptive card` 제거 및 `Parse JSON` 조립, 새/클래식 디자이너, 동적 콘텐츠(`⚡`) vs 수식(`fx`) 치트시트, 실습 A/B 및 디버깅 팁 |
+| **07** | [07_billing_teams_java_api_guide.md](./07_billing_teams_java_api_guide.md) | **빌링 플랫폼 × MS Teams Java(Spring Boot) 구현체 가이드**: [`billing-teams-ops/`](./billing-teams-ops) 실전 프로젝트 — 결제 승인·매입·환불 Adaptive Card 발송 REST API, `HMAC-SHA256` 서명 링크 기반 Teams 유입 검증 페이지(`/ops/transactions/{txId}`), 환불 승인 콜백 및 채널 거래 조회 |
 
 ---
 
@@ -40,6 +41,7 @@ Microsoft Teams의 **채널(Channel)** 및 **그룹 채팅(Group Chat)** 을 대
 
 - **단순 단방향 알림 (서버 → Teams 채널/그룹 채팅)**: `01` + `04` (Workflows Incoming Webhook + Adaptive Card JSON)
 - **Teams UI 클릭부터 `Parse JSON`·수식(`fx`) 작성법까지 처음부터 따라하기**: `06` (채팅에서 시작하기 · 흐름 편집기 · 수식 백과사전)
+- **Java 백엔드에서 결제 승인·매입·환불 카드 발송 + 링크 클릭 Teams 유입 검증까지 코드로 바로 실행**: `07` + [`billing-teams-ops/`](./billing-teams-ops)
 - **승인 요청/설문처럼 버튼 클릭 후 백엔드/플로우에서 후속 처리**:
   - 로우코드(Power Automate) 중심: `03` + `04` + `06` (`Post adaptive card and wait for a response`)
   - 커스텀 백엔드 서버 중심: `01` + `03` (Teams Bot + `Action.Execute` / `adaptiveCard/action`)

@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="MS Teams 어댑티브 카드 서명 링크 유입 검증 및 빌링 결제·매입·환불 운영 처리 화면">
+    <title th:text="'거래 검증 및 운영 처리 · ' + ${txId}">거래 검증 및 운영 처리</title>
+    <link rel="stylesheet" th:href="@{/css/ops.css}">
+</head>
+<body>
+<header class="topbar">
+    <div class="topbar-inner">
+        <a class="topbar-brand" th:href="@{/ops}" id="nav-home-link">
+            <span>Billing × MS Teams Ops</span>
+            <span class="topbar-sub">링크 유입 검증 &amp; 원장 콘솔</span>
+        </a>
+        <div class="btn-row">
+            <a class="btn btn-outline btn-sm" th:href="@{'/ops/formats?txId=' + ${txId}}" id="open-formats-for-tx-btn">이 거래로 알림 6종 비교</a>
+            <a class="btn btn-outline btn-sm" th:href="@{/ops}" id="back-to-launcher-btn">← 시뮬레이터 &amp; 카드 발송함</a>
+        </div>
+    </div>
+</header>
+
+<main class="container">
+    <div class="page-header">
+        <h1 th:text="'거래 상세 및 Teams 유입 검증 (' + ${txId} + ')'">거래 상세 및 Teams 유입 검증</h1>
+        <p>MS Teams 어댑티브 카드의 Action.OpenUrl 링크에 포함된 HMAC-SHA256 서명과 만료 시각을 검증합니다.</p>
+    </div>
+
+    <div th:if="${toastMessage}" class="toast toast-ok" id="flash-toast-ok" th:text="${toastMessage}"></div>
+    <div th:if="${errorMessage}" class="toast toast-error" id="flash-toast-err" th:text="${errorMessage}"></div>
+
+    <!-- 1. Teams 링크 유입 검증 리포트 -->
+    <section id="teams-verification-banner"
+             th:class="'verify-card ' + (${verification.status.name() == 'VERIFIED_TEAMS'} ? 'verify-ok' : (${verification.status.name() == 'DIRECT_UNVERIFIED'} ? 'verify-warn' : 'verify-danger'))">
+        <div class="verify-headline">
+            <h2 th:text="${verification.status.badgeLabel}">Teams 공식 링크 검증 완료</h2>
+            <span th:class="'badge ' + (${verification.status.name() == 'VERIFIED_TEAMS'} ? 'badge-ok' : (${verification.status.name() == 'DIRECT_UNVERIFIED'} ? 'badge-warn' : 'badge-danger'))"
+                  th:text="${verification.status.name()}">VERIFIED_TEAMS</span>
+        </div>
+        <p class="verify-desc" th:text="${verification.message}">검증 메시지</p>
+
+        <div class="verify-meta-grid">
+            <div class="meta-item">
+                <div class="meta-label">유입 출처 (src)</div>
+                <div class="meta-value mono" th:text="${verification.source ?: '-'}">msteams</div>
+            </div>
+            <div class="meta-item">
+                <div class="meta-label">발송 카드 종류 (cardType)</div>
+                <div class="meta-value mono" th:text="${verification.cardType ?: '-'}">PAYMENT_AUTHORIZED</div>
+            </div>
+            <div class="meta-item">
+                <div class="meta-label">요청 작업 (action)</div>
+                <div class="meta-value mono" th:text="${verification.action ?: '-'}">view</div>
+            </div>
+            <div class="meta-item">
+                <div class="meta-label">서명 발급 / 만료 시각</div>
+                <div class="meta-value mono" th:text="${issuedAtKst} + ' → ' + ${expiresAtKst}">-</div>
+            </div>
+            <div class="meta-item" th:if="${sig != null}">
+                <div class="meta-label">전달된 HMAC 서명 (sig)</div>
+                <div class="meta-value mono" th:text="${sig}">-</div>
+            </div>
+        </div>
+
+        <div style="margin-top: 14px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px;">
+            <span style="font-size: 12.5px; font-weight: 600;">검증 케이스 비교 테스트:</span>
+            <a class="btn btn-outline btn-sm" th:href="${freshValidUrl}" id="test-valid-link-btn">정상 Teams 서명 링크</a>
+            <a class="btn btn-outline btn-sm" th:href="${tamperedSampleUrl}" id="test-tampered-link-btn">파라미터 변조 테스트</a>
+            <a class="btn btn-outline btn-sm" th:href="${expiredSampleUrl}" id="test-expired-link-btn">만료된 링크 테스트</a>
+            <a class="btn btn-outline btn-sm" th:href="@{'/ops/transactions/' + ${txId}}" id="test-direct-link-btn">서명 없는 직접 접속</a>
+        </div>
+    </section>
+
+    <div th:if="${tx == null}" class="surface">
+        <h2 class="surface-title">거래 내역 없음</h2>
+        <p>요청하신 거래 ID(<code class="mono" th:text="${txId}"></code>)가 현재 원장에 존재하지 않습니다.</p>
+        <a class="btn btn-primary" th:href="@{/ops}">시뮬레이터로 돌아가기</a>
+    </div>
+
+    <div th:if="${tx != null}" class="two-col">
+        <!-- 좌측: 거래 원장 상세 + 이력 -->
+        <div>
+            <section class="surface">
+                <div class="surface-title">
+                    <span>결제 원장 정보</span>
+                    <span class="badge badge-neutral" th:text="${tx.status.label}">결제 승인</span>
+                </div>
+
+                <div class="kv-list">
+                    <div class="kv-key">거래 ID</div>
+                    <div class="kv-val mono" th:text="${tx.txId}">TX-1000</div>
+
+                    <div class="kv-key">주문번호</div>
+                    <div class="kv-val mono" th:text="${tx.orderId}">ORD-100</div>
+
+                    <div class="kv-key">가맹점 / 서비스</div>
+                    <div class="kv-val" th:text="${tx.merchantName}">서비스명</div>
+
+                    <div class="kv-key">원결제 금액</div>
+                    <div class="kv-val amount-highlight"
+                         th:text="'₩' + ${#numbers.formatInteger(tx.amount, 1, 'COMMA')}">₩128,000</div>
+
+                    <div class="kv-key">누적 환불 / 잔액</div>
+                    <div class="kv-val"
+                         th:text="'환불 ₩' + ${#numbers.formatInteger(tx.refundedAmount, 1, 'COMMA')} + ' / 잔액 ₩' + ${#numbers.formatInteger(tx.remainingAmount, 1, 'COMMA')}">-</div>
+
+                    <div class="kv-key">결제수단</div>
+                    <div class="kv-val" th:text="${tx.paymentMethod}">신한카드</div>
+
+                    <div class="kv-key">승인번호</div>
+                    <div class="kv-val mono" th:text="${tx.authCode}">38492011</div>
+
+                    <div class="kv-key" th:if="${tx.lastFailureReason != null}">최근 매입 실패 사유</div>
+                    <div class="kv-val" th:if="${tx.lastFailureReason != null}" style="color: var(--danger-text);"
+                         th:text="${tx.lastFailureReason}">-</div>
+                </div>
+            </section>
+
+            <section class="surface">
+                <h2 class="surface-title">처리 이력 (Audit Trail)</h2>
+                <ul class="timeline">
+                    <li th:each="item : ${tx.history}">
+                        <div class="timeline-head">
+                            <span th:text="${item.title}">결제 승인 완료</span>
+                            <span class="timeline-time"
+                                  th:text="${#temporals.format(item.timestamp.atZone(T(java.time.ZoneId).of('Asia/Seoul')), 'HH:mm:ss')}">12:00:00</span>
+                        </div>
+                        <div class="timeline-detail" th:text="${item.detail}">상세 내역</div>
+                    </li>
+                </ul>
+            </section>
+        </div>
+
+        <!-- 우측: Teams 인증 전용 운영 처리 패널 -->
+        <aside class="surface">
+            <h2 class="surface-title">빌링 운영 액션 (매입 / 환불)</h2>
+
+            <!-- 미검증 상태에서는 액션 잠금 -->
+            <div th:if="${!verification.verified}" class="locked-box" id="ops-action-locked">
+                <strong>운영 액션 잠금 상태</strong>
+                <p style="margin: 8px 0 12px;">
+                    현재 접속은 유효한 MS Teams 카드 서명(<code>VERIFIED_TEAMS</code>)이 확인되지 않았으므로 매입 확정 및 환불 처리가 제한됩니다.
+                </p>
+                <a class="btn btn-primary btn-sm" th:href="${freshValidUrl}" id="unlock-with-valid-link-btn">
+                    정상 서명된 Teams 링크로 다시 열기
+                </a>
+            </div>
+
+            <!-- 검증 완료(VERIFIED_TEAMS) 상태에서만 활성화 -->
+            <div th:if="${verification.verified}" id="ops-action-unlocked">
+                <!-- 대기 중인 환불 승인/반려가 있는 경우 -->
+                <div th:if="${tx.pendingRefundAmount > 0}">
+                    <div style="background: var(--warn-bg); color: var(--warn-text); padding: 12px 14px; border-radius: var(--radius-md); margin-bottom: 14px; font-size: 13.5px;">
+                        <strong>승인 대기 환불 요청:</strong>
+                        <span th:text="'₩' + ${#numbers.formatInteger(tx.pendingRefundAmount, 1, 'COMMA')}"></span><br>
+                        <span th:text="'요청자: ' + ${tx.pendingRefundRequester} + ' / 사유: ' + ${tx.pendingRefundReason}"></span>
+                    </div>
+
+                    <form th:action="@{'/ops/transactions/' + ${tx.txId} + '/refund-decision'}" method="post" class="form-stack">
+                        <input type="hidden" name="src" th:value="${src}">
+                        <input type="hidden" name="cardType" th:value="${cardType}">
+                        <input type="hidden" name="action" th:value="${action}">
+                        <input type="hidden" name="iat" th:value="${iat}">
+                        <input type="hidden" name="exp" th:value="${exp}">
+                        <input type="hidden" name="sig" th:value="${sig}">
+                        <div>
+                            <label class="field-label" for="decision-comment">승인 / 반려 코멘트</label>
+                            <input class="input" id="decision-comment" type="text" name="comment" placeholder="예: 확인 완료, 환불 승인합니다.">
+                        </div>
+                        <div class="btn-row">
+                            <button class="btn btn-primary" type="submit" name="approved" value="true" id="approve-refund-btn">환불 최종 승인</button>
+                            <button class="btn btn-danger" type="submit" name="approved" value="false" id="reject-refund-btn">환불 반려</button>
+                        </div>
+                    </form>
+                    <div class="divider"></div>
+                </div>
+
+                <!-- 수동 매입 확정 -->
+                <div th:if="${tx.status.name() == 'AUTHORIZED' or tx.status.name() == 'CAPTURE_FAILED'}">
+                    <label class="field-label">매입(Capture) 처리</label>
+                    <p style="margin: 0 0 10px; font-size: 13px; color: var(--text-secondary);">
+                        승인 상태이거나 실패한 매입 건을 즉시 확정하고 Teams로 매입 완료 카드를 발송합니다.
+                    </p>
+                    <form th:action="@{'/ops/transactions/' + ${tx.txId} + '/capture'}" method="post">
+                        <input type="hidden" name="src" th:value="${src}">
+                        <input type="hidden" name="cardType" th:value="${cardType}">
+                        <input type="hidden" name="action" th:value="${action}">
+                        <input type="hidden" name="iat" th:value="${iat}">
+                        <input type="hidden" name="exp" th:value="${exp}">
+                        <input type="hidden" name="sig" th:value="${sig}">
+                        <button class="btn btn-primary" type="submit" id="execute-capture-btn">수동 매입 확정 실행</button>
+                    </form>
+                    <div class="divider"></div>
+                </div>
+
+                <!-- 즉시 환불 실행 -->
+                <div th:if="${tx.remainingAmount > 0 and tx.pendingRefundAmount == 0}">
+                    <form th:action="@{'/ops/transactions/' + ${tx.txId} + '/refund'}" method="post" class="form-stack">
+                        <input type="hidden" name="src" th:value="${src}">
+                        <input type="hidden" name="cardType" th:value="${cardType}">
+                        <input type="hidden" name="action" th:value="${action}">
+                        <input type="hidden" name="iat" th:value="${iat}">
+                        <input type="hidden" name="exp" th:value="${exp}">
+                        <input type="hidden" name="sig" th:value="${sig}">
+
+                        <div>
+                            <label class="field-label" for="refund-amount-input">환불 실행 금액 (원)</label>
+                            <input class="input" id="refund-amount-input" type="number" name="refundAmount"
+                                   min="1" th:max="${tx.remainingAmount}" th:value="${tx.remainingAmount}" required>
+                        </div>
+                        <div>
+                            <label class="field-label" for="refund-reason-input">환불 사유</label>
+                            <input class="input" id="refund-reason-input" type="text" name="reason"
+                                   value="Teams 운영자 확인 후 환불 처리" required>
+                        </div>
+                        <button class="btn btn-danger" type="submit" id="execute-refund-btn">즉시 환불 처리 및 Teams 알림</button>
+                    </form>
+                </div>
+
+                <div th:if="${tx.remainingAmount == 0}" style="font-size: 13.5px; color: var(--text-muted);">
+                    전액 환불이 완료되어 추가 처리 가능한 잔액이 없습니다.
+                </div>
+            </div>
+        </aside>
+    </div>
+</main>
+</body>
+</html>

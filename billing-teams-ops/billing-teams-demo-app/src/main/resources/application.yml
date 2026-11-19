@@ -1,0 +1,21 @@
+server:
+  port: ${PORT:8080}
+
+spring:
+  application:
+    name: billing-teams-ops
+  thymeleaf:
+    cache: false
+
+billing:
+  teams:
+    # MS Teams Workflows Incoming Webhook URL (미설정 시 Dry-Run 모드로 동작하며 Outbox에 카드 JSON 저장)
+    webhook-url: ${TEAMS_WEBHOOK_URL:}
+    # 카드 내 Action.OpenUrl 링크가 가리킬 우리 시스템 기본 주소
+    base-url: ${BILLING_BASE_URL:http://localhost:8080}
+    # Teams 카드 링크 유입 검증용 HMAC-SHA256 비밀키 (운영 환경에서는 반드시 환경변수로 주입)
+    link-secret: ${TEAMS_LINK_SECRET:dev-billing-teams-hmac-secret-key-change-in-prod-2026}
+    # 서명된 링크 유효 시간 (분)
+    link-ttl-minutes: ${TEAMS_LINK_TTL_MINUTES:60}
+    # Teams Outgoing Webhook (@멘션 조회용) Base64 HMAC 토큰 (선택)
+    outgoing-webhook-secret: ${TEAMS_OUTGOING_WEBHOOK_SECRET:}

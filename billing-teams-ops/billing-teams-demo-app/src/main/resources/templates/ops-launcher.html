@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="빌링 플랫폼 결제·매입·환불 이벤트 시뮬레이터 및 MS Teams 어댑티브 카드 발송 콘솔">
+    <title>Billing × MS Teams 연동 시뮬레이터</title>
+    <link rel="stylesheet" th:href="@{/css/ops.css}">
+</head>
+<body>
+<header class="topbar">
+    <div class="topbar-inner">
+        <a class="topbar-brand" th:href="@{/ops}" id="launcher-brand-link">
+            <span>Billing × MS Teams Ops</span>
+            <span class="topbar-sub">Java 17 · Spring Boot REST API &amp; Adaptive Cards</span>
+        </a>
+        <div class="btn-row">
+            <a class="btn btn-outline btn-sm" th:href="@{/ops/formats}" id="open-formats-lab-btn">Teams 알림 방식 6종 비교 →</a>
+            <span th:if="${webhookConfigured}" class="badge badge-ok">LIVE WEBHOOK 연결됨</span>
+            <span th:unless="${webhookConfigured}" class="badge badge-neutral">DRY-RUN 모드 (Outbox 저장)</span>
+        </div>
+    </div>
+</header>
+
+<main class="container">
+    <div class="page-header">
+        <h1>빌링 플랫폼 MS Teams 운영 시뮬레이터</h1>
+        <p>결제 승인·매입·환불 REST 이벤트를 발생시켜 Adaptive Card JSON을 생성하고, 카드에 심어진 HMAC 서명 링크의 유입 검증 동작을 테스트합니다.</p>
+    </div>
+
+    <div th:if="${toastMessage}" class="toast toast-ok" id="sim-toast" th:text="${toastMessage}"></div>
+
+    <!-- 1. 신규 결제 승인 이벤트 발송 -->
+    <section class="surface">
+        <h2 class="surface-title">1. 신규 결제 승인 이벤트 발생 (→ Teams 카드 발송)</h2>
+        <form th:action="@{/ops/simulate/authorize}" method="post"
+              style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; align-items: end;">
+            <div>
+                <label class="field-label" for="sim-merchant">가맹점 / 서비스명</label>
+                <input class="input" id="sim-merchant" type="text" name="merchantName" value="클라우드 빌링 월간 구독" required>
+            </div>
+            <div>
+                <label class="field-label" for="sim-amount">결제 금액 (원)</label>
+                <input class="input" id="sim-amount" type="number" name="amount" min="100" value="185000" required>
+            </div>
+            <div>
+                <label class="field-label" for="sim-method">결제수단</label>
+                <input class="input" id="sim-method" type="text" name="paymentMethod" value="삼성카드 (5310-****-****-3029)" required>
+            </div>
+            <div>
+                <button class="btn btn-primary" type="submit" id="sim-authorize-submit" style="width: 100%;">
+                    결제 승인 카드 발송
+                </button>
+            </div>
+        </form>
+    </section>
+
+    <!-- 2. 거래 원장 및 Teams 유입 링크 검증 테스트 -->
+    <section class="surface">
+        <div class="surface-title">
+            <span>2. 거래 목록 &amp; Teams 링크 유입 검증 바로가기</span>
+            <span style="font-size: 12.5px; font-weight: 500; color: var(--text-muted);"
+                  th:text="'서명 링크 유효시간: ' + ${linkTtlMinutes} + '분'"></span>
+        </div>
+
+        <div class="table-wrap">
+            <table>
+                <thead>
+                <tr>
+                    <th>거래 ID / 가맹점</th>
+                    <th>금액 / 잔액</th>
+                    <th>상태</th>
+                    <th>추가 이벤트 발송</th>
+                    <th>링크 클릭 유입 검증 테스트</th>
+                </tr>
+                </thead>
+                <tbody>
+                <tr th:each="tx : ${transactions}">
+                    <td>
+                        <div class="mono" style="font-weight: 600;" th:text="${tx.txId}">TX-1000</div>
+                        <div style="font-size: 12.5px; color: var(--text-secondary);" th:text="${tx.merchantName}">가맹점</div>
+                    </td>
+                    <td>
+                        <div style="font-weight: 700;" th:text="'₩' + ${#numbers.formatInteger(tx.amount, 1, 'COMMA')}">₩128,000</div>
+                        <div style="font-size: 12px; color: var(--text-muted);"
+                             th:text="'잔액 ₩' + ${#numbers.formatInteger(tx.remainingAmount, 1, 'COMMA')}">잔액</div>
+                    </td>
+                    <td>
+                        <span class="badge badge-neutral" th:text="${tx.status.label}">결제 승인</span>
+                    </td>
+                    <td>
+                        <div class="btn-row">
+                            <form th:action="@{/ops/simulate/capture-fail}" method="post" style="display:inline;">
+                                <input type="hidden" name="txId" th:value="${tx.txId}">
+                                <button class="btn btn-outline btn-sm" type="submit">매입 실패 경보</button>
+                            </form>
+                            <form th:if="${tx.remainingAmount > 0}" th:action="@{/ops/simulate/refund-request}" method="post" style="display:inline;">
+                                <input type="hidden" name="txId" th:value="${tx.txId}">
+                                <button class="btn btn-outline btn-sm" type="submit">환불 승인요청</button>
+                            </form>
+                        </div>
+                    </td>
+                    <td th:with="links=${demoLinksByTx.get(tx.txId)}">
+                        <div class="btn-row">
+                            <a class="btn btn-primary btn-sm" th:href="${links.validTeamsUrl}">정상 Teams 링크 진입</a>
+                            <a class="btn btn-outline btn-sm" th:href="${links.tamperedUrl}">위변조 링크</a>
+                            <a class="btn btn-outline btn-sm" th:href="${links.expiredUrl}">만료 링크</a>
+                            <a class="btn btn-outline btn-sm" th:href="${links.directUrl}">일반 직접 접속</a>
+                        </div>
+                    </td>
+                </tr>
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    <!-- 3. 발송된 Teams Adaptive Card Outbox -->
+    <section class="surface">
+        <div class="surface-title">
+            <span>3. 발송된 MS Teams Adaptive Card 페이로드 (Outbox)</span>
+            <a class="btn btn-outline btn-sm" th:href="@{/api/v1/teams/outbox}" target="_blank">Raw JSON API 보기</a>
+        </div>
+
+        <div th:each="item, stat : ${outbox}" style="margin-bottom: 18px; padding-bottom: 18px; border-bottom: 1px solid var(--border-hairline);">
+            <div style="display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap;">
+                <div>
+                    <strong th:text="${item.summary}">[결제 승인] ₩128,000</strong>
+                    <span class="mono" style="color: var(--text-muted); margin-left: 8px;" th:text="${item.dispatchId}">DSP-1</span>
+                </div>
+                <div class="btn-row">
+                    <span class="badge badge-neutral" th:text="${item.deliveryNote}">DRY-RUN</span>
+                    <a class="btn btn-primary btn-sm" th:href="${item.signedDetailUrl}">카드 내 [상세 링크] 클릭하기</a>
+                </div>
+            </div>
+            <details th:open="${stat.index == 0}" style="margin-top: 8px;">
+                <summary style="cursor: pointer; font-size: 13px; font-weight: 600; color: var(--text-secondary);">
+                    Teams Workflows 발송 JSON 페이로드 펼치기 / 접기
+                </summary>
+                <pre class="code-box" th:text="${item.prettyJson}"></pre>
+            </details>
+        </div>
+    </section>
+</main>
+</body>
+</html>
