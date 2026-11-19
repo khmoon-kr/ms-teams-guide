@@ -19,12 +19,32 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * MS Teams 카드/메시지 내 외부 브라우저 이동 링크(Action.OpenUrl, HTML anchor 등)에
- * HMAC-SHA256 서명 및 만료 시각(TTL)을 부여하고 검증하는 순수 Java 컴포넌트입니다.
+ * MS Teams 카드·메시지 내 외부 브라우저 이동 링크({@code Action.OpenUrl}, HTML {@code <a href>} 등)에
+ * {@code HMAC-SHA256} 서명 및 만료 시각(TTL)을 부여하고 검증하는 스레드 안전(Thread-Safe) 컴포넌트입니다.
+ *
+ * <h2>서명 규격</h2>
+ * <p>서명 원문(Canonical Payload)은 파이프({@code |}) 구분자로 결합된 다음 6개 필드로 구성됩니다:</p>
+ * <pre>{@code
+ * {resourceId}|msteams|{cardType}|{action}|{iatEpochSeconds}|{expEpochSeconds}
+ * }</pre>
+ * <p>위 문자열을 {@link TeamsSettings#getLinkSecret()} 비밀키로 {@code HMAC-SHA256} 해싱한 뒤
+ * 패딩 없는 Base64URL 문자열로 인코딩하여 {@code sig} 쿼리 파라미터로 부착합니다.</p>
+ *
+ * <h2>단위 테스트 지원</h2>
+ * <p>{@link #TeamsLinkSigner(TeamsSettings, Clock)} 생성자에 {@link Clock#fixed(Instant, java.time.ZoneId)}를
+ * 주입하면 {@code Thread.sleep()} 없이도 만료 링크({@link LinkVerificationStatus#EXPIRED}) 시나리오를
+ * 결정론적으로 검증할 수 있습니다.</p>
+ *
+ * @see LinkVerificationResult
+ * @see LinkVerificationStatus
  */
 public class TeamsLinkSigner {
 
+    /**
+     * 정식 MS Teams 알림에서 생성된 링크임을 나타내는 고정 {@code src} 쿼리 파라미터 값입니다.
+     */
     public static final String EXPECTED_SOURCE = "msteams";
+
     private static final String HMAC_ALGO = "HmacSHA256";
     private static final Pattern PATH_VAR_PATTERN = Pattern.compile("\\{[^/]+}");
     private static final Logger log = LoggerFactory.getLogger(TeamsLinkSigner.class);
@@ -33,10 +53,23 @@ public class TeamsLinkSigner {
     private final TeamsSettings settings;
     private final Clock clock;
 
+    /**
+     * 시스템 기본 UTC 시계({@link Clock#systemUTC()})를 사용하여 서명기를 생성합니다.
+     *
+     * @param settings Teams 설정 객체 ({@code null} 불가)
+     * @throws NullPointerException {@code settings}가 {@code null}인 경우
+     */
     public TeamsLinkSigner(TeamsSettings settings) {
         this(settings, Clock.systemUTC());
     }
 
+    /**
+     * 지정된 {@link Clock}을 사용하여 서명기를 생성합니다 (단위 테스트 및 커스텀 시간 소스 주입용).
+     *
+     * @param settings Teams 설정 객체 ({@code null} 불가)
+     * @param clock    발급 시각({@code iat}) 및 만료 판정에 사용할 시계 ({@code null} 불가)
+     * @throws NullPointerException 인자 중 {@code null}이 포함된 경우
+     */
     public TeamsLinkSigner(TeamsSettings settings, Clock clock) {
         this.settings = Objects.requireNonNull(settings, "settings must not be null");
         this.clock = Objects.requireNonNull(clock, "clock must not be null");
@@ -46,7 +79,13 @@ public class TeamsLinkSigner {
     }
 
     /**
-     * 설정된 baseUrl + entryPathTemplate(예: /ops/items/{id})을 기준으로 서명된 URL을 생성합니다.
+     * {@link TeamsSettings#getBaseUrl()}과 {@link TeamsSettings#getEntryPathTemplate()}을 결합하고
+     * 설정된 유효시간({@link TeamsSettings#getLinkTtlMinutes()})을 적용해 서명된 진입 URL을 생성합니다.
+     *
+     * @param resourceId 대상 리소스·거래·문서 식별자 (경로 템플릿의 {@code {id}} 치환 및 서명 원문에 사용, {@code null} 불가)
+     * @param cardType   알림·카드 유형 식별자 (예: {@code "ORDER_ALERT"}, {@code "RECEIPT_CARD"})
+     * @param action     진입 후 수행할 의도 액션 (예: {@code "view"}, {@code "approve"})
+     * @return {@code src}, {@code cardType}, {@code action}, {@code iat}, {@code exp}, {@code sig}가 부착된 전체 URL
      */
     public String createSignedEntryUrl(String resourceId, String cardType, String action) {
         Instant now = Instant.now(clock);
@@ -54,6 +93,16 @@ public class TeamsLinkSigner {
         return createSignedEntryUrl(resourceId, cardType, action, now.getEpochSecond(), exp.getEpochSecond());
     }
 
+    /**
+     * 발급 시각과 만료 시각(Epoch 초)을 직접 지정하여 기본 진입 경로 기반의 서명된 URL을 생성합니다.
+     *
+     * @param resourceId  대상 리소스 식별자 ({@code null} 불가)
+     * @param cardType    알림·카드 유형 식별자
+     * @param action      의도 액션 식별자
+     * @param iatEpochSec 발급 시각 (UTC Epoch Seconds)
+     * @param expEpochSec 만료 시각 (UTC Epoch Seconds)
+     * @return 서명 파라미터가 부착된 전체 URL
+     */
     public String createSignedEntryUrl(
             String resourceId,
             String cardType,
@@ -75,7 +124,14 @@ public class TeamsLinkSigner {
     }
 
     /**
-     * 외부 프로젝트에서 임의의 자체 웹 URL에 Teams 유입 검증용 서명 파라미터를 덧붙일 때 사용합니다.
+     * 기본 경로 템플릿과 무관한 임의의 대상 URL에 Teams 유입 검증용 서명 쿼리 파라미터를 덧붙입니다.
+     * 이미 쿼리 스트링({@code ?key=val})이 포함된 URL이면 자동으로 {@code &}로 연결합니다.
+     *
+     * @param targetUrl  서명을 부착할 대상 웹 URL (예: {@code "https://admin.example.com/approvals/77?tab=summary"})
+     * @param resourceId 검증 시 대조할 대상 리소스 식별자 ({@code null} 불가)
+     * @param cardType   알림·카드 유형 식별자
+     * @param action     의도 액션 식별자
+     * @return 서명 파라미터가 추가된 전체 URL
      */
     public String signCustomUrl(String targetUrl, String resourceId, String cardType, String action) {
         Instant now = Instant.now(clock);
@@ -83,6 +139,17 @@ public class TeamsLinkSigner {
         return signCustomUrl(targetUrl, resourceId, cardType, action, now.getEpochSecond(), exp.getEpochSecond());
     }
 
+    /**
+     * 발급·만료 시각을 직접 지정하여 임의의 대상 URL에 서명 파라미터를 덧붙입니다.
+     *
+     * @param targetUrl   서명을 부착할 대상 웹 URL ({@code null} 불가)
+     * @param resourceId  대상 리소스 식별자 ({@code null} 불가)
+     * @param cardType    알림·카드 유형 식별자
+     * @param action      의도 액션 식별자
+     * @param iatEpochSec 발급 시각 (UTC Epoch Seconds)
+     * @param expEpochSec 만료 시각 (UTC Epoch Seconds)
+     * @return 서명 파라미터가 추가된 전체 URL
+     */
     public String signCustomUrl(
             String targetUrl,
             String resourceId,
@@ -107,7 +174,11 @@ public class TeamsLinkSigner {
     }
 
     /**
-     * 쿼리 파라미터 Map(예: Servlet, Filter, API Gateway, SPA 요청 등)으로부터 직접 서명을 검증합니다.
+     * 쿼리 파라미터 {@link Map}(Servlet Filter, API Gateway, SPA 검증 API 등)으로부터 서명 유효성을 검증합니다.
+     *
+     * @param resourceId  현재 접근 중인 경로/요청의 리소스 식별자
+     * @param queryParams URL 쿼리 파라미터 맵 ({@code null} 또는 빈 맵이면 {@link LinkVerificationStatus#DIRECT_UNVERIFIED} 반환)
+     * @return 4단계 상태와 상세 메타데이터가 담긴 {@link LinkVerificationResult}
      */
     public LinkVerificationResult verifyQueryMap(String resourceId, Map<String, String> queryParams) {
         if (queryParams == null || queryParams.isEmpty()) {
@@ -138,6 +209,18 @@ public class TeamsLinkSigner {
         );
     }
 
+    /**
+     * 개별 쿼리 파라미터 값을 받아 상수 시간 {@code HMAC-SHA256} 대조 및 만료 시각({@code exp}) 검증을 수행합니다.
+     *
+     * @param resourceId 현재 요청 경로의 리소스 식별자 (서명 발급 당시의 식별자와 일치해야 함)
+     * @param src        유입 출처 파라미터 ({@code "msteams"} 기대, 미전달 시 {@code null})
+     * @param cardType   알림·카드 유형 파라미터
+     * @param action     액션 파라미터
+     * @param iat        발급 시각 Epoch 초
+     * @param exp        만료 시각 Epoch 초
+     * @param sig        Base64URL 인코딩된 {@code HMAC-SHA256} 서명 문자열
+     * @return 검증 상태와 사유 메시지를 포함한 {@link LinkVerificationResult}
+     */
     public LinkVerificationResult verify(
             String resourceId,
             String src,
@@ -235,7 +318,6 @@ public class TeamsLinkSigner {
         );
     }
 
-    // 내부 서명 메커니즘은 외부 API 표면적 최소화를 위해 package-private으로 제한 (규칙 3.1)
     String buildCanonicalPayload(String resourceId, String src, String cardType, String action, long iat, long exp) {
         return String.join("|", resourceId, src, cardType, action, String.valueOf(iat), String.valueOf(exp));
     }

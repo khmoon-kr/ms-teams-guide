@@ -125,10 +125,27 @@ public TeamsLinkSigner teamsLinkSigner(TeamsSettings settings) {
 
 ---
 
+## 8. 문서화 규칙 (`package-info.java` · Javadoc · IDE 메타데이터)
+
+외부 서비스 개발자는 라이브러리의 내부 소스를 일일이 열어보지 않고 **IDE 코드 자동완성 툴팁과 Javadoc**에 의존해 개발합니다.
+
+1. **모든 라이브러리 패키지에 `package-info.java` 필수 작성**
+   - `*-core` 및 `*-spring-boot-starter` 내 `.java` 소스가 존재하는 모든 패키지는 반드시 `package-info.java`를 포함해야 합니다.
+   - 패키지 책임 범위, 스레드 안전성 보장 여부, 주요 진입 클래스(`@see`) 및 짧은 사용 예시를 명시합니다.
+   - 모듈 간 패키지 충돌(Split Package)이 발생하지 않도록 `*-spring-boot-starter`의 전용 클래스(`TeamsProperties`, `TeamsAutoConfiguration`)는 `autoconfigure` 패키지로 일원화합니다.
+2. **공개(`public`) API 전수 Javadoc 작성 (`Xdoclint` 무경고 기준)**
+   - 모든 `public` 클래스·인터페이스·열거형 상수·`record`(`@param` 컴포넌트 설명 포함)·생성자·메서드에 `/** ... */` Javadoc을 작성합니다.
+   - `@param`, `@return`, `@throws`(`NullPointerException`, `IllegalArgumentException` 등 전제 조건), 불변·스레드 안전성 보장을 빠짐없이 기술하며, `javadoc -Xdoclint:all -Werror` 실행 시 경고·오류가 0건이어야 합니다.
+3. **Spring Boot 프로퍼티 IDE 자동완성 메타데이터 제공**
+   - `*-spring-boot-starter`에는 `META-INF/spring-configuration-metadata.json`(또는 `spring-boot-configuration-processor`)을 포함하여 소비 프로젝트의 `application.yml` 작성 시 속성 타입·기본값·한국어 설명이 즉시 노출되도록 합니다.
+
+---
+
 ## PR 셀프 체크리스트
 
 - [ ] 클래스명·설정 키에 특정 서비스 도메인 이름(`Billing*` 등)이 섞이지 않았는가?
 - [ ] `*-core` 모듈에 `org.springframework.*` 등 프레임워크 의존성이 추가되지 않았는가?
+- [ ] 새로 추가한 패키지·`public` 클래스/메서드에 `package-info.java`와 `Xdoclint` 무경고 Javadoc이 작성되었는가?
 - [ ] 새로 추가한 Starter `@Bean`에 `@ConditionalOnMissingBean`이 붙어 있는가? (`@ComponentScan` 미사용)
 - [ ] 외부 네트워크 호출에 타임아웃이 설정되어 있고, 인메모리 컬렉션에 크기 제한(`0` 비활성화 포함)이 있는가?
 - [ ] 시크릿 키나 전체 웹훅 URL이 로그에 찍히지 않는가?

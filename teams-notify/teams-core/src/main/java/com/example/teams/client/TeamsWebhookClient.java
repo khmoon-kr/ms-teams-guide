@@ -28,13 +28,42 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.regex.Pattern;
 
 /**
- * JDK 17 표준 {@link HttpClient} 기반 MS Teams Workflows Incoming Webhook 전송 클라이언트 (도메인 중립).
+ * 표준 JDK 17 {@link HttpClient}를 이용해 MS Teams Workflows Incoming Webhook으로
+ * JSON 페이로드를 전송하는 스레드 안전(Thread-Safe) 클라이언트입니다.
+ *
+ * <h2>설계 특징</h2>
+ * <ul>
+ *   <li><b>Dry-Run 지원</b>: 웹훅 URL이 설정되지 않은 로컬·테스트 환경에서는 외부 네트워크 호출 없이
+ *       페이로드 직렬화 및 Outbox 기록만 수행합니다.</li>
+ *   <li><b>다중 채널 분기 전송</b>: 기본 설정된 URL 외에도 {@link #sendCardToWebhook(String, String, CardBuildResult)}을 통해
+ *       심각도나 주제별로 서로 다른 Teams 채팅·채널 웹훅으로 전송할 수 있습니다.</li>
+ *   <li><b>민감 URL 마스킹</b>: 네트워크 오류 발생 시 예외 메시지에 포함될 수 있는 웹훅 시크릿 URL을
+ *       {@code [REDACTED_URL]}로 마스킹하여 로그 유출을 방지합니다.</li>
+ * </ul>
+ *
+ * @see com.example.teams.TeamsNotifier#webhookClient()
  */
 public class TeamsWebhookClient {
 
     private static final Logger log = LoggerFactory.getLogger(TeamsWebhookClient.class);
     private static final Pattern URL_TOKEN_MASK = Pattern.compile("https?://\\S+");
 
+    /**
+     * 단건 웹훅 발송 시도 결과와 전송된 원본 페이로드 스냅샷을 담는 불변 레코드입니다.
+     *
+     * @param dispatchId      발송 추적용 고유 식별자 (예: {@code "DSP-8A12F901"})
+     * @param resourceId      발송 대상 리소스 식별자
+     * @param eventType       이벤트 유형 식별자
+     * @param summary         로그 및 목록 표시용 한 줄 요약
+     * @param signedDetailUrl 카드에 포함된 첫 번째 서명 링크 URL
+     * @param signedActionUrl 카드에 포함된 두 번째 서명 링크 URL
+     * @param liveDelivered   실제 원격 Teams 웹훅 엔드포인트가 2xx 응답을 반환했는지 여부 (Dry-Run 시 {@code false})
+     * @param httpStatus      HTTP 응답 상태 코드 (Dry-Run 시 {@code 200}, 네트워크 오류 시 {@code 502})
+     * @param deliveryNote    발송 결과 요약 메시지 (실패 시 URL이 마스킹된 사유 포함)
+     * @param dispatchedAt    발송 시각 (UTC {@link Instant})
+     * @param payload         전송된 최상위 JSON 맵 (수정 불가)
+     * @param prettyJson      들여쓰기 포맷팅된 전송 JSON 문자열
+     */
     public record TeamsDispatchRecord(
             String dispatchId,
             String resourceId,
@@ -49,6 +78,22 @@ public class TeamsWebhookClient {
             Map<String, Object> payload,
             String prettyJson
     ) {
+        /**
+         * 필수 인자 검증 및 방어적 불변 복사를 수행하는 정규 생성자입니다.
+         *
+         * @param dispatchId      발송 추적용 고유 식별자 (예: {@code "DSP-8A12F901"})
+         * @param resourceId      발송 대상 리소스 식별자
+         * @param eventType       이벤트 유형 식별자
+         * @param summary         로그 및 목록 표시용 한 줄 요약
+         * @param signedDetailUrl 카드에 포함된 첫 번째 서명 링크 URL
+         * @param signedActionUrl 카드에 포함된 두 번째 서명 링크 URL
+         * @param liveDelivered   실제 원격 Teams 웹훅 엔드포인트가 2xx 응답을 반환했는지 여부 (Dry-Run 시 {@code false})
+         * @param httpStatus      HTTP 응답 상태 코드 (Dry-Run 시 {@code 200}, 네트워크 오류 시 {@code 502})
+         * @param deliveryNote    발송 결과 요약 메시지 (실패 시 URL이 마스킹된 사유 포함)
+         * @param dispatchedAt    발송 시각 (UTC {@link Instant})
+         * @param payload         전송된 최상위 JSON 맵 (수정 불가)
+         * @param prettyJson      들여쓰기 포맷팅된 전송 JSON 문자열
+         */
         public TeamsDispatchRecord {
             payload = payload != null
                     ? Collections.unmodifiableMap(new LinkedHashMap<>(payload))
@@ -62,10 +107,21 @@ public class TeamsWebhookClient {
     private final Clock clock;
     private final CopyOnWriteArrayList<TeamsDispatchRecord> outbox = new CopyOnWriteArrayList<>();
 
+    /**
+     * 기본 Jackson 매퍼, 기본 타임아웃 {@link HttpClient}, 시스템 UTC 시계를 사용하여 클라이언트를 생성합니다.
+     *
+     * @param settings Teams 설정 객체 ({@code null} 불가)
+     */
     public TeamsWebhookClient(TeamsSettings settings) {
         this(settings, createDefaultObjectMapper());
     }
 
+    /**
+     * 지정된 {@link ObjectMapper}와 설정 타임아웃 기반 {@link HttpClient}로 클라이언트를 생성합니다.
+     *
+     * @param settings     Teams 설정 객체 ({@code null} 불가)
+     * @param objectMapper JSON 직렬화에 사용할 매퍼 ({@code null}이면 기본 매퍼 생성)
+     */
     public TeamsWebhookClient(TeamsSettings settings, ObjectMapper objectMapper) {
         this(
                 settings,
@@ -77,6 +133,14 @@ public class TeamsWebhookClient {
         );
     }
 
+    /**
+     * 사내 프록시·mTLS 등이 설정된 커스텀 {@link HttpClient}와 {@link Clock}을 주입받아 클라이언트를 생성합니다.
+     *
+     * @param settings     Teams 설정 객체 ({@code null} 불가)
+     * @param objectMapper JSON 직렬화에 사용할 매퍼 ({@code null}이면 기본 매퍼 생성)
+     * @param httpClient   전송에 사용할 JDK {@link HttpClient} ({@code null} 불가)
+     * @param clock        발송 시각 기록용 시계 ({@code null} 불가)
+     */
     public TeamsWebhookClient(TeamsSettings settings, ObjectMapper objectMapper, HttpClient httpClient, Clock clock) {
         this.settings = Objects.requireNonNull(settings, "settings must not be null");
         this.objectMapper = objectMapper != null ? objectMapper : createDefaultObjectMapper();
@@ -84,10 +148,25 @@ public class TeamsWebhookClient {
         this.clock = Objects.requireNonNull(clock, "clock must not be null");
     }
 
+    /**
+     * {@link TeamsSettings#getWebhookUrl()}에 설정된 기본 웹훅 주소로 조립된 카드를 전송합니다.
+     *
+     * @param resourceId 발송 대상 리소스 식별자
+     * @param cardResult {@link com.example.teams.cards.TeamsCardFactory}가 생성한 카드 결과 ({@code null} 불가)
+     * @return 발송 상태 및 페이로드 기록이 담긴 {@link TeamsDispatchRecord}
+     */
     public TeamsDispatchRecord sendCard(String resourceId, CardBuildResult cardResult) {
         return sendCardToWebhook(settings.getWebhookUrl(), resourceId, cardResult);
     }
 
+    /**
+     * 기본 설정 URL 대신 호출 시 지정한 특정 Teams Workflows Webhook URL로 카드를 전송합니다.
+     *
+     * @param targetWebhookUrl 전송 대상 웹훅 URL ({@code null} 또는 빈 문자열이면 Dry-Run 처리)
+     * @param resourceId       발송 대상 리소스 식별자
+     * @param cardResult       조립된 카드 결과 ({@code null} 불가)
+     * @return 발송 상태 및 페이로드 기록이 담긴 {@link TeamsDispatchRecord}
+     */
     public TeamsDispatchRecord sendCardToWebhook(String targetWebhookUrl, String resourceId, CardBuildResult cardResult) {
         Objects.requireNonNull(cardResult, "cardResult must not be null");
         return dispatchInternal(
@@ -101,6 +180,16 @@ public class TeamsWebhookClient {
         );
     }
 
+    /**
+     * 임의의 커스텀 JSON 맵(예: Workflows {@code Parse JSON} 트리거용 데이터 페이로드)을 직접 전송합니다.
+     *
+     * @param targetWebhookUrl 전송 대상 웹훅 URL ({@code null} 또는 공백이면 기본 설정 URL 사용)
+     * @param resourceId       발송 대상 리소스 식별자
+     * @param eventType        이벤트 유형 코드
+     * @param summary          로그 표시용 한 줄 요약
+     * @param payload          전송할 JSON 객체 맵
+     * @return 발송 상태 및 페이로드 기록이 담긴 {@link TeamsDispatchRecord}
+     */
     public TeamsDispatchRecord sendRawPayload(
             String targetWebhookUrl,
             String resourceId,
@@ -137,7 +226,6 @@ public class TeamsWebhookClient {
         } else {
             try {
                 String jsonBody = objectMapper.writeValueAsString(payload);
-                // 주의: Workflows 'Anyone' 트리거는 Authorization 헤더가 있으면 실패하므로 Content-Type만 전송 (규칙 6.4)
                 HttpRequest request = HttpRequest.newBuilder()
                         .uri(URI.create(webhookUrl.trim()))
                         .timeout(Duration.ofSeconds(settings.getRequestTimeoutSeconds()))
@@ -191,17 +279,23 @@ public class TeamsWebhookClient {
         return record;
     }
 
+    /**
+     * 인메모리 Outbox에 보관된 최근 발송 이력 목록을 최신순 불변 스냅샷으로 반환합니다.
+     * {@link TeamsSettings#getMaxOutboxSize()}가 {@code 0}이면 항상 빈 리스트를 반환합니다.
+     *
+     * @return 최신순 {@link TeamsDispatchRecord} 불변 리스트
+     */
     public List<TeamsDispatchRecord> getOutbox() {
         return Collections.unmodifiableList(new ArrayList<>(outbox));
     }
 
+    /**
+     * 인메모리 Outbox에 보관된 모든 발송 이력을 비웁니다.
+     */
     public void clearOutbox() {
         outbox.clear();
     }
 
-    /**
-     * 예외 메시지에 시크릿 토큰이 포함된 전체 Webhook URL이 노출되지 않도록 마스킹합니다. (규칙 6.2)
-     */
     static String sanitizeErrorMessage(Throwable error) {
         if (error == null || error.getMessage() == null) {
             return error != null ? error.getClass().getSimpleName() : "unknown error";

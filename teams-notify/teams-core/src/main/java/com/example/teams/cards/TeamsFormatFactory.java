@@ -18,11 +18,32 @@ import java.util.Map;
 import java.util.Objects;
 
 /**
- * 어댑티브 카드 외 5가지 대안 MS Teams 알림 포맷(Rich HTML, Activity Feed, Urgent+@Tag, Receipt Card, Hero Card)과
- * 서명된 유입 링크를 도메인 중립적으로 생성하는 순수 Java 팩토리입니다.
+ * Adaptive Card 외에 MS Teams가 지원하는 5가지 대안 알림 포맷(리치 HTML 표 메시지, 활동 피드 벨 알림,
+ * 긴급 반복 푸시 + {@code @팀태그}, 영수증 카드, 히어로 카드)의 표준 JSON 페이로드를 생성하는 팩토리입니다.
+ *
+ * <p>모든 생성 메서드는 내부 진입 링크에 {@link TeamsLinkSigner}의 {@code HMAC-SHA256} 서명과
+ * 해당 {@link TeamsFormat} 식별자를 자동으로 포함시키므로, 사용자가 어떤 알림 포맷의 링크를 클릭해
+ * 웹 시스템에 진입했는지까지 수신 측에서 정확히 식별할 수 있습니다.</p>
+ *
+ * @see TeamsFormat
+ * @see FormatMessage
  */
 public class TeamsFormatFactory {
 
+    /**
+     * 리치 HTML 표({@code <table>}) 및 개인 {@code @멘션} 메시지 생성을 위한 불변 입력 스펙입니다.
+     *
+     * @param resourceId         대상 리소스 식별자 ({@code null} 불가)
+     * @param subject            채널 게시물 제목
+     * @param badgeTitle         본문 첫머리 강조 말머리 (예: {@code "[정산 알림]"})
+     * @param mentionDisplayName {@code <at>} 태그에 표시할 수신자 이름
+     * @param mentionUserId      Microsoft Entra ID(AAD) 사용자 Object ID (Graph API 전송 시 사용)
+     * @param mentionEmail       수신자 이메일 주소 (Workflows 멘션 토큰 조회 시 사용)
+     * @param introText          인사말 뒤 안내 문구
+     * @param rows               HTML 표에 순서대로 렌더링할 키-값 행 목록
+     * @param linkLabel          하단 서명 링크 앵커 텍스트
+     * @param action             서명 링크에 기록할 의도 액션 (생략 시 {@code "view"})
+     */
     public record HtmlMessageSpec(
             String resourceId,
             String subject,
@@ -35,6 +56,20 @@ public class TeamsFormatFactory {
             String linkLabel,
             String action
     ) {
+        /**
+         * 필수 인자 검증 및 방어적 불변 복사를 수행하는 정규 생성자입니다.
+         *
+         * @param resourceId         대상 리소스 식별자 ({@code null} 불가)
+         * @param subject            채널 게시물 제목
+         * @param badgeTitle         본문 첫머리 강조 말머리 (예: {@code "[정산 알림]"})
+         * @param mentionDisplayName {@code <at>} 태그에 표시할 수신자 이름
+         * @param mentionUserId      Microsoft Entra ID(AAD) 사용자 Object ID (Graph API 전송 시 사용)
+         * @param mentionEmail       수신자 이메일 주소 (Workflows 멘션 토큰 조회 시 사용)
+         * @param introText          인사말 뒤 안내 문구
+         * @param rows               HTML 표에 순서대로 렌더링할 키-값 행 목록
+         * @param linkLabel          하단 서명 링크 앵커 텍스트
+         * @param action             서명 링크에 기록할 의도 액션 (생략 시 {@code "view"})
+         */
         public HtmlMessageSpec {
             Objects.requireNonNull(resourceId, "resourceId must not be null");
             rows = rows != null ? List.copyOf(rows) : List.of();
@@ -42,6 +77,17 @@ public class TeamsFormatFactory {
         }
     }
 
+    /**
+     * MS Teams 좌측 상단 활동 피드(🔔) 푸시 알림 생성을 위한 불변 입력 스펙입니다.
+     *
+     * @param resourceId         대상 리소스 식별자 ({@code null} 불가)
+     * @param topicLabel         활동 피드 출처 제목
+     * @param activityType       Teams 앱 매니페스트에 정의된 {@code activityTypes} 식별자
+     * @param recipientEmail     알림 수신 대상자 이메일
+     * @param previewText        OS 배너 및 활동 목록에 노출될 미리보기 요약문
+     * @param templateParameters Graph {@code sendActivityNotification} 치환 파라미터 맵
+     * @param action             클릭 이동 링크에 기록할 의도 액션 (생략 시 {@code "view"})
+     */
     public record ActivityFeedSpec(
             String resourceId,
             String topicLabel,
@@ -51,6 +97,17 @@ public class TeamsFormatFactory {
             Map<String, String> templateParameters,
             String action
     ) {
+        /**
+         * 필수 인자 검증 및 방어적 불변 복사를 수행하는 정규 생성자입니다.
+         *
+         * @param resourceId         대상 리소스 식별자 ({@code null} 불가)
+         * @param topicLabel         활동 피드 출처 제목
+         * @param activityType       Teams 앱 매니페스트에 정의된 {@code activityTypes} 식별자
+         * @param recipientEmail     알림 수신 대상자 이메일
+         * @param previewText        OS 배너 및 활동 목록에 노출될 미리보기 요약문
+         * @param templateParameters Graph {@code sendActivityNotification} 치환 파라미터 맵
+         * @param action             클릭 이동 링크에 기록할 의도 액션 (생략 시 {@code "view"})
+         */
         public ActivityFeedSpec {
             Objects.requireNonNull(resourceId, "resourceId must not be null");
             templateParameters = templateParameters != null
@@ -60,6 +117,17 @@ public class TeamsFormatFactory {
         }
     }
 
+    /**
+     * 긴급({@code importance: "urgent"} — 2분 간격 최대 20분 반복 알림) 및 {@code @팀태그} 호출 메시지 생성을 위한 불변 스펙입니다.
+     *
+     * @param resourceId  대상 리소스 식별자 ({@code null} 불가)
+     * @param teamTagName 호출할 Teams 팀 태그 표시 이름 (예: {@code "운영당직"})
+     * @param teamTagId   Graph {@code teamworkTagIdentity} 태그 ID
+     * @param headline    긴급 호출 본문 헤드라인 문구
+     * @param details     글머리 기호({@code <ul>})로 나열할 상세 정보 목록
+     * @param linkLabel   하단 긴급 조치 서명 링크 문구
+     * @param action      서명 링크에 기록할 의도 액션 (생략 시 {@code "view"})
+     */
     public record UrgentAlertSpec(
             String resourceId,
             String teamTagName,
@@ -69,6 +137,17 @@ public class TeamsFormatFactory {
             String linkLabel,
             String action
     ) {
+        /**
+         * 필수 인자 검증 및 방어적 불변 복사를 수행하는 정규 생성자입니다.
+         *
+         * @param resourceId  대상 리소스 식별자 ({@code null} 불가)
+         * @param teamTagName 호출할 Teams 팀 태그 표시 이름 (예: {@code "운영당직"})
+         * @param teamTagId   Graph {@code teamworkTagIdentity} 태그 ID
+         * @param headline    긴급 호출 본문 헤드라인 문구
+         * @param details     글머리 기호({@code <ul>})로 나열할 상세 정보 목록
+         * @param linkLabel   하단 긴급 조치 서명 링크 문구
+         * @param action      서명 링크에 기록할 의도 액션 (생략 시 {@code "view"})
+         */
         public UrgentAlertSpec {
             Objects.requireNonNull(resourceId, "resourceId must not be null");
             details = details != null ? List.copyOf(details) : List.of();
@@ -76,12 +155,40 @@ public class TeamsFormatFactory {
         }
     }
 
+    /**
+     * 영수증 카드({@code ReceiptCardSpec}) 내 개별 품목·항목 행을 나타내는 불변 레코드입니다.
+     *
+     * @param title    항목명 ({@code null} 불가)
+     * @param subtitle 항목 보조 설명
+     * @param price    표시 단가·금액 문자열
+     * @param quantity 수량 문자열 (예: {@code "1"})
+     */
     public record ReceiptItem(String title, String subtitle, String price, String quantity) {
+        /**
+         * 필수 인자 검증 및 방어적 불변 복사를 수행하는 정규 생성자입니다.
+         *
+         * @param title    항목명 ({@code null} 불가)
+         * @param subtitle 항목 보조 설명
+         * @param price    표시 단가·금액 문자열
+         * @param quantity 수량 문자열 (예: {@code "1"})
+         */
         public ReceiptItem {
             Objects.requireNonNull(title, "title must not be null");
         }
     }
 
+    /**
+     * MS Teams 내장 영수증·명세 카드({@code application/vnd.microsoft.card.receipt}) 생성을 위한 불변 스펙입니다.
+     *
+     * @param resourceId  대상 리소스 식별자 ({@code null} 불가)
+     * @param title       영수증 상단 제목
+     * @param facts       상단 메타데이터 키-값 목록
+     * @param items       명세 품목 목록
+     * @param taxText     부가세·세액 표시 문자열
+     * @param totalText   최종 합계 금액 표시 문자열
+     * @param buttonTitle 하단 서명 링크 버튼 캡션
+     * @param action      서명 링크에 기록할 의도 액션 (생략 시 {@code "view"})
+     */
     public record ReceiptCardSpec(
             String resourceId,
             String title,
@@ -92,6 +199,18 @@ public class TeamsFormatFactory {
             String buttonTitle,
             String action
     ) {
+        /**
+         * 필수 인자 검증 및 방어적 불변 복사를 수행하는 정규 생성자입니다.
+         *
+         * @param resourceId  대상 리소스 식별자 ({@code null} 불가)
+         * @param title       영수증 상단 제목
+         * @param facts       상단 메타데이터 키-값 목록
+         * @param items       명세 품목 목록
+         * @param taxText     부가세·세액 표시 문자열
+         * @param totalText   최종 합계 금액 표시 문자열
+         * @param buttonTitle 하단 서명 링크 버튼 캡션
+         * @param action      서명 링크에 기록할 의도 액션 (생략 시 {@code "view"})
+         */
         public ReceiptCardSpec {
             Objects.requireNonNull(resourceId, "resourceId must not be null");
             facts = facts != null ? List.copyOf(facts) : List.of();
@@ -100,6 +219,18 @@ public class TeamsFormatFactory {
         }
     }
 
+    /**
+     * MS Teams 내장 히어로 카드({@code application/vnd.microsoft.card.hero}) 생성을 위한 불변 스펙입니다.
+     *
+     * @param resourceId           대상 리소스 식별자 ({@code null} 불가)
+     * @param title                카드 주 제목
+     * @param subtitle             카드 부제목
+     * @param text                 요약 본문 텍스트
+     * @param primaryButtonTitle   첫 번째 서명 링크 버튼 제목
+     * @param primaryAction        첫 번째 버튼의 의도 액션 (생략 시 {@code "view"})
+     * @param secondaryButtonTitle 두 번째 서명 링크 버튼 제목 (생략 또는 공백이면 버튼 1개만 생성)
+     * @param secondaryAction      두 번째 버튼의 의도 액션
+     */
     public record HeroCardSpec(
             String resourceId,
             String title,
@@ -110,6 +241,18 @@ public class TeamsFormatFactory {
             String secondaryButtonTitle,
             String secondaryAction
     ) {
+        /**
+         * 필수 인자 검증 및 방어적 불변 복사를 수행하는 정규 생성자입니다.
+         *
+         * @param resourceId           대상 리소스 식별자 ({@code null} 불가)
+         * @param title                카드 주 제목
+         * @param subtitle             카드 부제목
+         * @param text                 요약 본문 텍스트
+         * @param primaryButtonTitle   첫 번째 서명 링크 버튼 제목
+         * @param primaryAction        첫 번째 버튼의 의도 액션 (생략 시 {@code "view"})
+         * @param secondaryButtonTitle 두 번째 서명 링크 버튼 제목 (생략 또는 공백이면 버튼 1개만 생성)
+         * @param secondaryAction      두 번째 버튼의 의도 액션
+         */
         public HeroCardSpec {
             Objects.requireNonNull(resourceId, "resourceId must not be null");
             primaryAction = (primaryAction != null && !primaryAction.isBlank()) ? primaryAction : "view";
@@ -120,20 +263,44 @@ public class TeamsFormatFactory {
     private final ObjectMapper objectMapper;
     private final Clock clock;
 
+    /**
+     * 기본 Jackson {@link ObjectMapper}와 시스템 UTC 시계를 사용하여 포맷 팩토리를 생성합니다.
+     *
+     * @param linkSigner 링크 서명기 ({@code null} 불가)
+     */
     public TeamsFormatFactory(TeamsLinkSigner linkSigner) {
         this(linkSigner, createDefaultObjectMapper(), Clock.systemUTC());
     }
 
+    /**
+     * 지정된 {@link ObjectMapper}와 시스템 UTC 시계를 사용하여 포맷 팩토리를 생성합니다.
+     *
+     * @param linkSigner   링크 서명기 ({@code null} 불가)
+     * @param objectMapper JSON 포맷팅에 사용할 매퍼 ({@code null}이면 기본 매퍼 생성)
+     */
     public TeamsFormatFactory(TeamsLinkSigner linkSigner, ObjectMapper objectMapper) {
         this(linkSigner, objectMapper, Clock.systemUTC());
     }
 
+    /**
+     * 모든 의존성을 명시적으로 주입받아 포맷 팩토리를 생성합니다.
+     *
+     * @param linkSigner   링크 서명기 ({@code null} 불가)
+     * @param objectMapper JSON 포맷팅에 사용할 매퍼 ({@code null}이면 기본 매퍼 생성)
+     * @param clock        생성 시각({@code generatedAt}) 기록용 시계 ({@code null} 불가)
+     */
     public TeamsFormatFactory(TeamsLinkSigner linkSigner, ObjectMapper objectMapper, Clock clock) {
         this.linkSigner = Objects.requireNonNull(linkSigner, "linkSigner must not be null");
         this.objectMapper = objectMapper != null ? objectMapper : createDefaultObjectMapper();
         this.clock = Objects.requireNonNull(clock, "clock must not be null");
     }
 
+    /**
+     * 리치 HTML 표({@code <table>})와 사용자 {@code @멘션}, 서명된 링크가 포함된 메시지 페이로드를 생성합니다.
+     *
+     * @param spec HTML 메시지 스펙 ({@code null} 불가)
+     * @return Graph API 및 Workflows용 페이로드가 담긴 {@link FormatMessage}
+     */
     public FormatMessage buildHtmlMessage(HtmlMessageSpec spec) {
         Objects.requireNonNull(spec, "spec must not be null");
         String signedUrl = linkSigner.createSignedEntryUrl(spec.resourceId(), TeamsFormat.HTML_MESSAGE.name(), spec.action());
@@ -203,6 +370,12 @@ public class TeamsFormatFactory {
         );
     }
 
+    /**
+     * MS Teams 활동 피드(🔔) 벨 푸시 알림 페이로드를 생성합니다.
+     *
+     * @param spec 활동 피드 알림 스펙 ({@code null} 불가)
+     * @return Graph {@code sendActivityNotification} 및 Workflows 피드 알림 규격의 {@link FormatMessage}
+     */
     public FormatMessage buildActivityFeed(ActivityFeedSpec spec) {
         Objects.requireNonNull(spec, "spec must not be null");
         String signedUrl = linkSigner.createSignedEntryUrl(spec.resourceId(), TeamsFormat.ACTIVITY_FEED.name(), spec.action());
@@ -245,6 +418,12 @@ public class TeamsFormatFactory {
         );
     }
 
+    /**
+     * {@code importance: "urgent"} 반복 푸시와 {@code @팀태그} 멘션이 결합된 긴급 경보 페이로드를 생성합니다.
+     *
+     * @param spec 긴급 경보 스펙 ({@code null} 불가)
+     * @return Graph 긴급 메시지 및 Workflows 팀 태그 연동 규격의 {@link FormatMessage}
+     */
     public FormatMessage buildUrgentAlert(UrgentAlertSpec spec) {
         Objects.requireNonNull(spec, "spec must not be null");
         String tagName = (spec.teamTagName() != null && !spec.teamTagName().isBlank())
@@ -306,6 +485,12 @@ public class TeamsFormatFactory {
         );
     }
 
+    /**
+     * MS Teams 내장 영수증 카드({@code application/vnd.microsoft.card.receipt}) 페이로드를 생성합니다.
+     *
+     * @param spec 영수증 카드 스펙 ({@code null} 불가)
+     * @return Bot / Outgoing Webhook / Graph 첨부 규격의 {@link FormatMessage}
+     */
     public FormatMessage buildReceiptCard(ReceiptCardSpec spec) {
         Objects.requireNonNull(spec, "spec must not be null");
         String signedUrl = linkSigner.createSignedEntryUrl(spec.resourceId(), TeamsFormat.RECEIPT_CARD.name(), spec.action());
@@ -357,6 +542,12 @@ public class TeamsFormatFactory {
         );
     }
 
+    /**
+     * MS Teams 내장 히어로 카드({@code application/vnd.microsoft.card.hero}) 페이로드를 생성합니다.
+     *
+     * @param spec 히어로 카드 스펙 ({@code null} 불가)
+     * @return Bot / Outgoing Webhook / Graph 첨부 규격의 {@link FormatMessage}
+     */
     public FormatMessage buildHeroCard(HeroCardSpec spec) {
         Objects.requireNonNull(spec, "spec must not be null");
         String signedPrimaryUrl = linkSigner.createSignedEntryUrl(
@@ -410,6 +601,13 @@ public class TeamsFormatFactory {
         );
     }
 
+    /**
+     * 이미 조립된 {@link CardBuildResult}를 다른 알림 포맷과 동일한 {@link FormatMessage} 구조로 래핑합니다.
+     *
+     * @param resourceId 대상 리소스 식별자 ({@code null} 불가)
+     * @param builtCard  조립 완료된 Adaptive Card 결과 ({@code null} 불가)
+     * @return {@link TeamsFormat#ADAPTIVE_CARD} 유형의 {@link FormatMessage}
+     */
     public FormatMessage buildAdaptiveCardFormat(String resourceId, CardBuildResult builtCard) {
         Objects.requireNonNull(resourceId, "resourceId must not be null");
         Objects.requireNonNull(builtCard, "builtCard must not be null");

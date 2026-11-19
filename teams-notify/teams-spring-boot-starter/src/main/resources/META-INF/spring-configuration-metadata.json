@@ -1,0 +1,82 @@
+{
+  "groups": [
+    {
+      "name": "teams",
+      "type": "com.example.teams.autoconfigure.TeamsProperties",
+      "sourceType": "com.example.teams.autoconfigure.TeamsProperties",
+      "description": "MS Teams 알림 전송, 멀티 포맷 조립 및 HMAC-SHA256 서명 링크 검증 설정."
+    }
+  ],
+  "properties": [
+    {
+      "name": "teams.webhook-url",
+      "type": "java.lang.String",
+      "sourceType": "com.example.teams.autoconfigure.TeamsProperties",
+      "defaultValue": "",
+      "description": "기본 전송 대상 MS Teams Workflows Incoming Webhook URL. 비어 있으면 실제 네트워크 요청을 생략하는 Dry-Run 모드로 동작합니다."
+    },
+    {
+      "name": "teams.base-url",
+      "type": "java.lang.String",
+      "sourceType": "com.example.teams.autoconfigure.TeamsProperties",
+      "defaultValue": "http://localhost:8080",
+      "description": "알림 내 서명된 링크가 가리킬 우리 웹 시스템의 기본 도메인 주소."
+    },
+    {
+      "name": "teams.entry-path-template",
+      "type": "java.lang.String",
+      "sourceType": "com.example.teams.autoconfigure.TeamsProperties",
+      "defaultValue": "/ops/items/{id}",
+      "description": "기본 서명 링크 생성 시 baseUrl 뒤에 결합할 경로 템플릿 ({id} 등 플레이스홀더가 리소스 ID로 자동 치환됨)."
+    },
+    {
+      "name": "teams.link-secret",
+      "type": "java.lang.String",
+      "sourceType": "com.example.teams.autoconfigure.TeamsProperties",
+      "defaultValue": "dev-teams-notify-hmac-secret-key-change-in-prod",
+      "description": "링크 서명 및 위변조 검증에 사용할 HMAC-SHA256 비밀키 (최소 16바이트 이상 필수, 운영 환경에서는 반드시 환경변수로 주입)."
+    },
+    {
+      "name": "teams.link-ttl-minutes",
+      "type": "java.lang.Long",
+      "sourceType": "com.example.teams.autoconfigure.TeamsProperties",
+      "defaultValue": 60,
+      "description": "발급된 서명 링크의 기본 유효시간(분 단위)."
+    },
+    {
+      "name": "teams.outgoing-webhook-secret",
+      "type": "java.lang.String",
+      "sourceType": "com.example.teams.autoconfigure.TeamsProperties",
+      "defaultValue": "",
+      "description": "MS Teams 표준 채널 Outgoing Webhook 등록 시 발급받은 Base64 인코딩 보안 토큰 (선택)."
+    },
+    {
+      "name": "teams.connect-timeout-seconds",
+      "type": "java.lang.Integer",
+      "sourceType": "com.example.teams.autoconfigure.TeamsProperties",
+      "defaultValue": 5,
+      "description": "Teams 웹훅 호출 시 TCP 연결 수립 타임아웃(초)."
+    },
+    {
+      "name": "teams.request-timeout-seconds",
+      "type": "java.lang.Integer",
+      "sourceType": "com.example.teams.autoconfigure.TeamsProperties",
+      "defaultValue": 10,
+      "description": "Teams 웹훅 호출 시 HTTP 응답 대기 타임아웃(초)."
+    },
+    {
+      "name": "teams.max-outbox-size",
+      "type": "java.lang.Integer",
+      "sourceType": "com.example.teams.autoconfigure.TeamsProperties",
+      "defaultValue": 50,
+      "description": "인메모리 Outbox 최대 보관 개수. 실서비스 운영 환경에서 메모리 보관이 불필요하면 0으로 설정하세요."
+    },
+    {
+      "name": "teams.display-zone",
+      "type": "java.lang.String",
+      "sourceType": "com.example.teams.autoconfigure.TeamsProperties",
+      "defaultValue": "Asia/Seoul",
+      "description": "카드 및 알림 본문 내 시각 문자열 포맷팅에 사용할 표준 시간대 ID (예: Asia/Seoul, UTC)."
+    }
+  ]
+}
