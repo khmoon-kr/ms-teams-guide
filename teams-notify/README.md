@@ -176,7 +176,24 @@ java -jar teams-demo-app/target/teams-demo-app-0.1.0.jar
 
 ---
 
-## 4. REST API 호출 예시 (cURL)
+## 4. Postman 컬렉션 & REST API 호출 예시
+
+웹 화면(`/ops`, `/ops/formats`)을 열지 않고도 **REST API 호출만으로 모든 카드 생성·웹훅 발송·서명 검증을 바로 테스트**할 수 있습니다.
+
+### 4.0 로컬 Postman 스크립트 바로 가져오기 (`postman/`)
+
+매번 `txId`나 서명 토큰(`sig`)을 복사·붙여넣기 할 필요 없이 순서대로 클릭만 하면 되는 로컬 전용 Postman 스크립트가 포함되어 있습니다.
+
+- **컬렉션 파일**: [`./postman/teams-notify-local.postman_collection.json`](./postman/teams-notify-local.postman_collection.json) (총 19개 API 시나리오 및 검증 스크립트 포함)
+- **로컬 환경변수 파일 (선택)**: [`./postman/teams-notify-local.postman_environment.json`](./postman/teams-notify-local.postman_environment.json) (`baseUrl = http://localhost:8080`)
+
+**사용 순서**:
+1. 로컬에서 데모 서버(`teams-demo-app`)를 기동합니다.
+2. Postman 좌측 상단 **Import** 클릭 → 위 `.postman_collection.json`(및 필요 시 `.postman_environment.json`) 파일을 드래그 앤 드롭합니다.
+3. **`01. 빌링 이벤트 > 1-1. 결제 승인 (Authorize)`** 요청의 **Send**를 누르면 생성된 `txId`와 `HMAC-SHA256` 서명 파라미터(`src`, `cardType`, `action`, `iat`, `exp`, `sig`)가 변수에 자동 저장됩니다.
+4. 이어서 `1-2`~`3-7` 요청을 순서대로 **Send**하거나, 컬렉션 메뉴의 **Run collection**을 실행하면 19개 전체 시나리오(정상 서명 통과 · 위변조 차단 · 직접 접속 판별 · 6종 알림 포맷 생성)가 한 번에 자동 검증됩니다.
+
+---
 
 ### 4.1 결제 승인 알림 발송 (`POST /api/v1/billing/events/authorize`)
 
