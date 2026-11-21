@@ -11,6 +11,7 @@ ms-teams-guide/
 ├── docs/                                            # MS Teams 백엔드 JSON 스펙 & Workflows UI·수식 가이드 (01~06)
 └── teams-notify/                                    # Java 17 / Spring Boot 3 공용 라이브러리 & 빌링 데모 프로젝트
     ├── README.md                                    # 라이브러리 연동 가이드 · 실행 방법 · REST API 명세
+    ├── docs/INTELLIJ_RUN_GUIDE.md                   # IntelliJ IDEA 데모 앱 실행 및 환경변수 설정 가이드
     ├── docs/CODING_RULES.md                         # 공통 라이브러리 8대 코딩 규칙 및 체크리스트
     ├── teams-core/                                  # 순수 Java 17 라이브러리 (Spring·도메인 의존성 0개)
     ├── teams-spring-boot-starter/                   # Spring Boot 3 AutoConfiguration 스타터
@@ -54,6 +55,7 @@ ms-teams-guide/
 | 문서 | 주요 내용 |
 | :--- | :--- |
 | **[teams-notify/README.md](./teams-notify/README.md)** | **`TeamsNotifier` 라이브러리 연동 & 빌링 운영 데모 가이드**: 멀티 모듈 구조(`teams-core` / `teams-spring-boot-starter` / `teams-demo-app`), 외부 프로젝트 연동 예시, `HMAC-SHA256` 서명 링크 유입 검증 화면, 6종 알림 포맷 비교 API |
+| **[teams-notify/docs/INTELLIJ_RUN_GUIDE.md](./teams-notify/docs/INTELLIJ_RUN_GUIDE.md)** | **IntelliJ IDEA 데모 앱 실행 가이드**: 하위 `pom.xml` Maven 프로젝트 등록, JDK 17 확인, Run Configuration 환경변수(`TEAMS_WEBHOOK_URL` 등) 설정 및 트러블슈팅 |
 | **[teams-notify/docs/CODING_RULES.md](./teams-notify/docs/CODING_RULES.md)** | **공통 라이브러리 8대 코딩 규칙**: 도메인 중립 네이밍, 3-계층 모듈 경계 및 무의존성 원칙, 불변 API·Builder 설계, `@AutoConfiguration` 에티켓, 보안 위생, `package-info.java` 및 `Xdoclint` 무경고 Javadoc 규칙 |
 
 ---
@@ -63,4 +65,5 @@ ms-teams-guide/
 - **단순 단방향 알림 (서버 → Teams 채널/그룹 채팅)**: [`01`](./docs/01_backend_message_and_webhook_json.md) + [`04`](./docs/04_workflows_webhook_and_messaging_guide.md)
 - **Teams UI 클릭부터 `Parse JSON`·수식(`fx`) 작성법까지 처음부터 따라하기**: [`06`](./docs/06_workflows_ui_and_expressions_step_by_step.md)
 - **Java / Spring Boot 프로젝트에 라이브러리(`TeamsNotifier`)로 붙이거나 서명 링크 유입 검증 실행하기**: [`teams-notify/README.md`](./teams-notify/README.md)
+- **IntelliJ IDEA에서 `teams-demo-app` 바로 띄우기**: [`teams-notify/docs/INTELLIJ_RUN_GUIDE.md`](./teams-notify/docs/INTELLIJ_RUN_GUIDE.md)
 - **라이브러리 기여 및 아키텍처·코딩 표준 확인하기**: [`teams-notify/docs/CODING_RULES.md`](./teams-notify/docs/CODING_RULES.md)

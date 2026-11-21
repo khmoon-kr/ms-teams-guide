@@ -156,6 +156,8 @@ LinkVerificationResult verified = teams.verifySignedQueryMap("ORD-1001", queryPa
 
 ### 3.2 테스트용 데모 서버 실행 방법 (`teams-demo-app`)
 
+> **IntelliJ IDEA에서 실행하려면?** Maven 멀티 모듈 인식, JDK 17 및 Run Configuration 환경변수 설정 방법은 **[IntelliJ IDEA 실행 및 환경설정 가이드 (`./docs/INTELLIJ_RUN_GUIDE.md`)](./docs/INTELLIJ_RUN_GUIDE.md)**를 참고하세요.
+
 Teams Webhook URL이 없어도 Dry-Run 시뮬레이터 모드로 바로 실행해 모든 카드 JSON과 링크 유입 검증을 테스트할 수 있습니다.
 
 ```bash
