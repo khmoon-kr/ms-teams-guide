@@ -16,8 +16,10 @@
         </a>
         <div class="btn-row">
             <a class="btn btn-outline btn-sm" th:href="@{/ops/formats}" id="open-formats-lab-btn">Teams 알림 방식 6종 비교 →</a>
-            <span th:if="${webhookConfigured}" class="badge badge-ok">LIVE WEBHOOK 연결됨</span>
-            <span th:unless="${webhookConfigured}" class="badge badge-neutral">DRY-RUN 모드 (Outbox 저장)</span>
+            <span th:if="${webhookConfigured}" class="badge badge-ok">1번 카드 LIVE</span>
+            <span th:unless="${webhookConfigured}" class="badge badge-neutral">1번 카드 DRY-RUN</span>
+            <span th:if="${messageWebhookConfigured}" class="badge badge-ok">2번 메시지 LIVE</span>
+            <span th:unless="${messageWebhookConfigured}" class="badge badge-neutral">2번 메시지 DRY-RUN</span>
         </div>
     </div>
 </header>
@@ -25,14 +27,14 @@
 <main class="container">
     <div class="page-header">
         <h1>빌링 플랫폼 MS Teams 운영 시뮬레이터</h1>
-        <p>결제 승인·매입·환불 REST 이벤트를 발생시켜 Adaptive Card JSON을 생성하고, 카드에 심어진 HMAC 서명 링크의 유입 검증 동작을 테스트합니다.</p>
+        <p>결제 승인·매입·환불 REST 이벤트를 발생시켜 1번 웹후크(Adaptive Card)와 2번 웹후크(일반/HTML 메시지)로 발송하고, 서명 링크 유입 검증을 테스트합니다.</p>
     </div>
 
     <div th:if="${toastMessage}" class="toast toast-ok" id="sim-toast" th:text="${toastMessage}"></div>
 
-    <!-- 1. 신규 결제 승인 이벤트 발송 -->
+    <!-- 1. 신규 결제 승인 이벤트 발송 (1번 카드 웹후크) -->
     <section class="surface">
-        <h2 class="surface-title">1. 신규 결제 승인 이벤트 발생 (→ Teams 카드 발송)</h2>
+        <h2 class="surface-title">1. 신규 결제 승인 이벤트 발생 (→ 1번 Adaptive Card 웹후크 발송)</h2>
         <form th:action="@{/ops/simulate/authorize}" method="post"
               style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; align-items: end;">
             <div>
@@ -50,6 +52,24 @@
             <div>
                 <button class="btn btn-primary" type="submit" id="sim-authorize-submit" style="width: 100%;">
                     결제 승인 카드 발송
+                </button>
+            </div>
+        </form>
+    </section>
+
+    <!-- 1-2. 일반/HTML 메시지 발송 테스트 (2번 메시지 웹후크) -->
+    <section class="surface">
+        <h2 class="surface-title">1-2. 일반 / HTML 메시지 발송 테스트 (→ 2번 메시지 웹후크 발송)</h2>
+        <form th:action="@{/ops/simulate/message}" method="post"
+              style="display: grid; grid-template-columns: 1fr 220px; gap: 12px; align-items: end;">
+            <div>
+                <label class="field-label" for="sim-message">전송할 텍스트 또는 HTML 본문 (<code>{"message": "..."}</code>)</label>
+                <input class="input" id="sim-message" type="text" name="message"
+                       value="<b>✅ 데모 앱 메시지 테스트</b><br>2번 워크플로(Post message)로 정상 수신되었습니다." required>
+            </div>
+            <div>
+                <button class="btn btn-primary" type="submit" id="sim-message-submit" style="width: 100%;">
+                    일반/HTML 메시지 발송
                 </button>
             </div>
         </form>
@@ -129,7 +149,7 @@
                 </div>
                 <div class="btn-row">
                     <span class="badge badge-neutral" th:text="${item.deliveryNote}">DRY-RUN</span>
-                    <a class="btn btn-primary btn-sm" th:href="${item.signedDetailUrl}">카드 내 [상세 링크] 클릭하기</a>
+                    <a th:if="${item.signedDetailUrl != null}" class="btn btn-primary btn-sm" th:href="${item.signedDetailUrl}">카드 내 [상세 링크] 클릭하기</a>
                 </div>
             </div>
             <details th:open="${stat.index == 0}" style="margin-top: 8px;">

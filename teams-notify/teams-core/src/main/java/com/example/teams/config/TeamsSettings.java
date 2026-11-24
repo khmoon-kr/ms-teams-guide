@@ -49,6 +49,7 @@ public final class TeamsSettings {
     public static final int MIN_SECRET_BYTES = 16;
 
     private final String webhookUrl;
+    private final String messageWebhookUrl;
     private final String baseUrl;
     private final String entryPathTemplate;
     private final String linkSecret;
@@ -61,6 +62,7 @@ public final class TeamsSettings {
 
     private TeamsSettings(Builder builder) {
         this.webhookUrl = builder.webhookUrl != null ? builder.webhookUrl.trim() : "";
+        this.messageWebhookUrl = builder.messageWebhookUrl != null ? builder.messageWebhookUrl.trim() : "";
         this.baseUrl = (builder.baseUrl != null && !builder.baseUrl.isBlank())
                 ? builder.baseUrl.trim()
                 : DEFAULT_BASE_URL;
@@ -96,13 +98,23 @@ public final class TeamsSettings {
     }
 
     /**
-     * 기본 전송 대상 MS Teams Workflows Incoming Webhook URL을 반환합니다.
+     * 기본 전송 대상 MS Teams Workflows Incoming Webhook URL(Adaptive Card용)을 반환합니다.
      * 빈 문자열일 경우 실제 HTTP 요청을 생략하는 Dry-Run 모드로 동작합니다.
      *
      * @return 웹훅 URL 문자열 (미설정 시 빈 문자열 {@code ""})
      */
     public String getWebhookUrl() {
         return webhookUrl;
+    }
+
+    /**
+     * 일반 텍스트 및 HTML 메시지 전용 MS Teams Workflows Webhook URL을 반환합니다.
+     * 빈 문자열일 경우 실제 HTTP 요청을 생략하는 Dry-Run 모드로 동작합니다.
+     *
+     * @return 일반/HTML 메시지용 웹훅 URL 문자열 (미설정 시 빈 문자열 {@code ""})
+     */
+    public String getMessageWebhookUrl() {
+        return messageWebhookUrl;
     }
 
     /**
@@ -202,6 +214,7 @@ public final class TeamsSettings {
      */
     public static final class Builder {
         private String webhookUrl = "";
+        private String messageWebhookUrl = "";
         private String baseUrl = DEFAULT_BASE_URL;
         private String entryPathTemplate = DEFAULT_ENTRY_PATH_TEMPLATE;
         private String linkSecret = DEFAULT_DEV_LINK_SECRET;
@@ -215,7 +228,7 @@ public final class TeamsSettings {
         private Builder() {}
 
         /**
-         * 기본 전송 대상 MS Teams Workflows Incoming Webhook URL을 설정합니다.
+         * 기본 전송 대상 MS Teams Workflows Incoming Webhook URL(Adaptive Card용)을 설정합니다.
          * {@code null} 또는 빈 문자열이면 Dry-Run 모드로 동작합니다.
          *
          * @param webhookUrl Workflows 웹훅 URL
@@ -223,6 +236,18 @@ public final class TeamsSettings {
          */
         public Builder webhookUrl(String webhookUrl) {
             this.webhookUrl = webhookUrl;
+            return this;
+        }
+
+        /**
+         * 일반 텍스트 및 HTML 메시지 전용 MS Teams Workflows Webhook URL을 설정합니다.
+         * {@code null} 또는 빈 문자열이면 Dry-Run 모드로 동작합니다.
+         *
+         * @param messageWebhookUrl 일반/HTML 메시지용 Workflows 웹훅 URL
+         * @return 현재 빌더
+         */
+        public Builder messageWebhookUrl(String messageWebhookUrl) {
+            this.messageWebhookUrl = messageWebhookUrl;
             return this;
         }
 

@@ -181,6 +181,50 @@ public class TeamsWebhookClient {
     }
 
     /**
+     * {@link TeamsSettings#getMessageWebhookUrl()}에 설정된 일반/HTML 메시지 전용 웹훅 주소로
+     * {@code {"message": "..."}} 페이로드를 전송합니다.
+     *
+     * @param resourceId 발송 대상 리소스 식별자
+     * @param summary    로그 및 Outbox 표시용 한 줄 요약
+     * @param message    전송할 일반 텍스트 또는 HTML 본문 ({@code null} 불가)
+     * @return 발송 상태 및 페이로드 기록이 담긴 {@link TeamsDispatchRecord}
+     */
+    public TeamsDispatchRecord sendMessage(String resourceId, String summary, String message) {
+        return sendMessageToWebhook(settings.getMessageWebhookUrl(), resourceId, summary, message, null);
+    }
+
+    /**
+     * 지정한 일반/HTML 메시지 전용 Teams Workflows Webhook URL로 {@code {"message": "..."}} 페이로드를 전송합니다.
+     *
+     * @param targetWebhookUrl 전송 대상 웹훅 URL ({@code null} 또는 빈 문자열이면 Dry-Run 처리)
+     * @param resourceId       발송 대상 리소스 식별자
+     * @param summary          로그 및 Outbox 표시용 한 줄 요약
+     * @param message          전송할 일반 텍스트 또는 HTML 본문 ({@code null} 불가)
+     * @param signedDetailUrl  본문에 포함된 서명 링크 URL (선택, {@code null} 가능)
+     * @return 발송 상태 및 페이로드 기록이 담긴 {@link TeamsDispatchRecord}
+     */
+    public TeamsDispatchRecord sendMessageToWebhook(
+            String targetWebhookUrl,
+            String resourceId,
+            String summary,
+            String message,
+            String signedDetailUrl
+    ) {
+        Objects.requireNonNull(message, "message must not be null");
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("message", message);
+        return dispatchInternal(
+                targetWebhookUrl,
+                resourceId,
+                "TEXT_HTML_MESSAGE",
+                summary != null && !summary.isBlank() ? summary : "[메시지 발송] " + resourceId,
+                signedDetailUrl,
+                null,
+                payload
+        );
+    }
+
+    /**
      * 임의의 커스텀 JSON 맵(예: Workflows {@code Parse JSON} 트리거용 데이터 페이로드)을 직접 전송합니다.
      *
      * @param targetWebhookUrl 전송 대상 웹훅 URL ({@code null} 또는 공백이면 기본 설정 URL 사용)

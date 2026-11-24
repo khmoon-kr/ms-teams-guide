@@ -8,7 +8,10 @@ spring:
     cache: false
 
 teams:
+  # 1번 워크플로 URL: Adaptive Card 전용 (기본 "채팅에 웹후크 경고 보내기" 템플릿)
   webhook-url: ${TEAMS_WEBHOOK_URL:}
+  # 2번 워크플로 URL: 일반 텍스트 / HTML 메시지 전용 (Post message -> triggerBody()?['message'])
+  message-webhook-url: ${TEAMS_MESSAGE_WEBHOOK_URL:}
   base-url: ${APP_BASE_URL:http://localhost:8080}
   entry-path-template: /ops/transactions/{id}
   link-secret: ${TEAMS_LINK_SECRET:dev-teams-notify-hmac-secret-key-change-in-prod}

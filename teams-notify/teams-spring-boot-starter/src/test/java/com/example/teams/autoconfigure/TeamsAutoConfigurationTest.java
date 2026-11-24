@@ -27,6 +27,8 @@ class TeamsAutoConfigurationTest {
     void registersAllLibraryBeansWithCustomProperties() {
         contextRunner
                 .withPropertyValues(
+                        "teams.webhook-url=https://hooks.example.com/card",
+                        "teams.message-webhook-url=https://hooks.example.com/message",
                         "teams.base-url=https://admin.external-service.kr",
                         "teams.entry-path-template=/orders/{id}/verify",
                         "teams.link-secret=external-prod-secret-key-2026",
@@ -40,6 +42,8 @@ class TeamsAutoConfigurationTest {
                     assertThat(context).hasSingleBean(TeamsWebhookClient.class);
 
                     TeamsNotifier notifier = context.getBean(TeamsNotifier.class);
+                    assertThat(notifier.settings().getWebhookUrl()).isEqualTo("https://hooks.example.com/card");
+                    assertThat(notifier.settings().getMessageWebhookUrl()).isEqualTo("https://hooks.example.com/message");
                     String signed = notifier.createSignedUrl("ORD-EXT-100", "ORDER_CREATED", "view");
                     assertThat(signed).startsWith("https://admin.external-service.kr/orders/ORD-EXT-100/verify?");
                 });

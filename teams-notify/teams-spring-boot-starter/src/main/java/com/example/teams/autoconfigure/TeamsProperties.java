@@ -28,9 +28,14 @@ import java.time.ZoneId;
 public class TeamsProperties {
 
     /**
-     * 기본 전송 대상 MS Teams Workflows Incoming Webhook URL입니다 (미설정 시 Dry-Run 모드).
+     * 기본 전송 대상 MS Teams Workflows Incoming Webhook URL(Adaptive Card용)입니다 (미설정 시 Dry-Run 모드).
      */
     private String webhookUrl = "";
+
+    /**
+     * 일반 텍스트 및 HTML 메시지 전용 MS Teams Workflows Webhook URL입니다 (미설정 시 Dry-Run 모드).
+     */
+    private String messageWebhookUrl = "";
 
     /**
      * 서명 링크가 가리킬 웹 애플리케이션의 기본 도메인 주소입니다.
@@ -94,6 +99,7 @@ public class TeamsProperties {
                 : ZoneId.of("Asia/Seoul");
         return TeamsSettings.builder()
                 .webhookUrl(webhookUrl)
+                .messageWebhookUrl(messageWebhookUrl)
                 .baseUrl(baseUrl)
                 .entryPathTemplate(entryPathTemplate)
                 .linkSecret(linkSecret)
@@ -107,7 +113,7 @@ public class TeamsProperties {
     }
 
     /**
-     * 기본 웹훅 URL을 반환합니다.
+     * 기본 웹훅 URL(Adaptive Card용)을 반환합니다.
      *
      * @return 웹훅 URL
      */
@@ -116,12 +122,30 @@ public class TeamsProperties {
     }
 
     /**
-     * 기본 웹훅 URL을 설정합니다.
+     * 기본 웹훅 URL(Adaptive Card용)을 설정합니다.
      *
      * @param webhookUrl 웹훅 URL
      */
     public void setWebhookUrl(String webhookUrl) {
         this.webhookUrl = webhookUrl;
+    }
+
+    /**
+     * 일반/HTML 메시지 전용 웹훅 URL을 반환합니다.
+     *
+     * @return 일반/HTML 메시지용 웹훅 URL
+     */
+    public String getMessageWebhookUrl() {
+        return messageWebhookUrl;
+    }
+
+    /**
+     * 일반/HTML 메시지 전용 웹훅 URL을 설정합니다.
+     *
+     * @param messageWebhookUrl 일반/HTML 메시지용 웹훅 URL
+     */
+    public void setMessageWebhookUrl(String messageWebhookUrl) {
+        this.messageWebhookUrl = messageWebhookUrl;
     }
 
     /**

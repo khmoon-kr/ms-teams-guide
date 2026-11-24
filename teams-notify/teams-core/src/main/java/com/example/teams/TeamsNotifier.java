@@ -153,6 +153,45 @@ public class TeamsNotifier {
     }
 
     /**
+     * 일반 텍스트 또는 HTML 본문을 {@link TeamsSettings#getMessageWebhookUrl()}로 전송합니다.
+     * Workflows 측 {@code Post message in a chat or channel} 액션이 {@code triggerBody()?['message']}를 수신하는 구조와 호환됩니다.
+     *
+     * @param resourceId 발송 추적용 리소스 식별자
+     * @param message    전송할 텍스트 또는 HTML 본문 ({@code null} 불가)
+     * @return 발송 결과 및 페이로드 스냅샷이 담긴 {@link TeamsDispatchRecord}
+     */
+    public TeamsDispatchRecord sendMessage(String resourceId, String message) {
+        return webhookClient.sendMessage(resourceId, "[메시지 발송] " + resourceId, message);
+    }
+
+    /**
+     * 일반 텍스트 또는 HTML 본문과 요약 문구를 {@link TeamsSettings#getMessageWebhookUrl()}로 전송합니다.
+     *
+     * @param resourceId      발송 추적용 리소스 식별자
+     * @param summary         로그 및 Outbox 표시용 요약 문구
+     * @param message         전송할 텍스트 또는 HTML 본문 ({@code null} 불가)
+     * @param signedDetailUrl 본문에 포함된 서명 링크 URL (선택, {@code null} 가능)
+     * @return 발송 결과 및 페이로드 스냅샷이 담긴 {@link TeamsDispatchRecord}
+     */
+    public TeamsDispatchRecord sendMessage(String resourceId, String summary, String message, String signedDetailUrl) {
+        return webhookClient.sendMessageToWebhook(
+                settings.getMessageWebhookUrl(), resourceId, summary, message, signedDetailUrl);
+    }
+
+    /**
+     * 지정한 별도의 메시지 전용 Teams 웹훅 URL로 {@code {"message": "..."}} 페이로드를 전송합니다.
+     *
+     * @param targetWebhookUrl 전송할 대상 웹훅 URL
+     * @param resourceId       발송 추적용 리소스 식별자
+     * @param summary          로그 및 Outbox 표시용 요약 문구
+     * @param message          전송할 텍스트 또는 HTML 본문 ({@code null} 불가)
+     * @return 발송 결과 및 페이로드 스냅샷이 담긴 {@link TeamsDispatchRecord}
+     */
+    public TeamsDispatchRecord sendMessageTo(String targetWebhookUrl, String resourceId, String summary, String message) {
+        return webhookClient.sendMessageToWebhook(targetWebhookUrl, resourceId, summary, message, null);
+    }
+
+    /**
      * 임의의 커스텀 JSON 맵 페이로드를 기본 설정된 웹훅 채널로 전송합니다.
      *
      * @param resourceId 발송 추적용 리소스 식별자

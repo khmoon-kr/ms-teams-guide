@@ -27,6 +27,8 @@
         <p>어댑티브 카드 외에도 일반 HTML 표 메시지, 좌측 상단 활동 피드(🔔), Urgent 반복 푸시, 영수증(Receipt) 카드, Hero 카드를 상황에 맞게 선택할 수 있습니다. 각 미리보기 안의 링크에는 모두 <strong>HMAC-SHA256 서명</strong>이 들어가 있어 클릭 시 유입 검증 페이지로 연결됩니다.</p>
     </div>
 
+    <div th:if="${toastMessage}" class="toast toast-ok" id="formats-toast" th:text="${toastMessage}"></div>
+
     <!-- 기준 거래 선택 바 -->
     <section class="surface" style="padding: 14px 20px;">
         <form th:action="@{/ops/formats}" method="get" style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
@@ -39,6 +41,8 @@
                 </option>
             </select>
             <span class="badge badge-neutral" th:text="'현재 상태: ' + ${tx.status.label}">결제 승인</span>
+            <span th:if="${messageWebhookConfigured}" class="badge badge-ok">2번 메시지 웹후크 LIVE</span>
+            <span th:unless="${messageWebhookConfigured}" class="badge badge-neutral">2번 메시지 웹후크 DRY-RUN</span>
         </form>
     </section>
 
@@ -48,7 +52,7 @@
         <article class="surface" id="card-format-html">
             <div class="surface-title">
                 <span>1. 일반 리치 HTML 메시지 (표 · @멘션)</span>
-                <span class="badge badge-neutral">POST /api/v1/teams/formats/html-message</span>
+                <span class="badge badge-neutral">POST /api/v1/teams/formats/html-message/send</span>
             </div>
             <p style="margin: 0; font-size: 13px; color: var(--text-secondary);" th:text="${htmlFmt.recommendedUseCase}"></p>
 
@@ -73,6 +77,13 @@
                     </div>
                 </div>
             </div>
+
+            <form th:action="@{/ops/formats/send-html}" method="post" style="margin: 10px 0;">
+                <input type="hidden" name="txId" th:value="${tx.txId}">
+                <button class="btn btn-primary btn-sm" type="submit" id="send-html-format-btn">
+                    2번 웹후크로 이 HTML 표 메시지 발송하기
+                </button>
+            </form>
 
             <details>
                 <summary style="cursor: pointer; font-size: 12.5px; font-weight: 600; color: var(--text-secondary);">Graph API / Workflows 발송 JSON 보기</summary>

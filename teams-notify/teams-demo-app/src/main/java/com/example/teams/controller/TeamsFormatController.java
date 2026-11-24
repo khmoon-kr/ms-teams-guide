@@ -1,6 +1,8 @@
 package com.example.teams.controller;
 
+import com.example.teams.TeamsNotifier;
 import com.example.teams.cards.FormatMessage;
+import com.example.teams.client.TeamsWebhookClient.TeamsDispatchRecord;
 import com.example.teams.domain.PaymentTransaction;
 import com.example.teams.domain.TeamsFormat;
 import com.example.teams.dto.FormatSampleRequest;
@@ -24,13 +26,16 @@ public class TeamsFormatController {
 
     private final BillingOperationsService billingService;
     private final BillingTeamsComposer composer;
+    private final TeamsNotifier teamsNotifier;
 
     public TeamsFormatController(
             BillingOperationsService billingService,
-            BillingTeamsComposer composer
+            BillingTeamsComposer composer,
+            TeamsNotifier teamsNotifier
     ) {
         this.billingService = billingService;
         this.composer = composer;
+        this.teamsNotifier = teamsNotifier;
     }
 
     @GetMapping
@@ -67,6 +72,30 @@ public class TeamsFormatController {
                 tx,
                 req != null ? req.recipientEmail() : null,
                 req != null ? req.note() : null
+        );
+    }
+
+    /**
+     * 2번 워크플로(일반/HTML 메시지 전용 웹훅: {@code teams.message-webhook-url})로
+     * 거래 HTML 표 메시지 또는 사용자 지정 메시지를 실제로 발송합니다.
+     */
+    @PostMapping("/html-message/send")
+    public TeamsDispatchRecord sendHtmlMessage(@RequestBody(required = false) FormatSampleRequest req) {
+        PaymentTransaction tx = resolveTransaction(req != null ? req.txId() : null);
+        FormatMessage htmlFmt = composer.composeHtmlFormat(
+                tx,
+                req != null ? req.recipientEmail() : null,
+                req != null ? req.note() : null
+        );
+        String htmlBody = extractHtmlForWebhook(htmlFmt);
+        if (req != null && req.note() != null && !req.note().isBlank()) {
+            htmlBody = "<p>" + req.note().trim() + "</p>" + htmlBody;
+        }
+        return teamsNotifier.sendMessage(
+                tx.getTxId(),
+                "[HTML 메시지] " + tx.getMerchantName() + " (" + tx.getTxId() + ")",
+                htmlBody,
+                htmlFmt.signedEntryUrl()
         );
     }
 
@@ -109,5 +138,17 @@ public class TeamsFormatController {
         return billingService.listTransactions().stream()
                 .findFirst()
                 .orElseThrow(() -> new IllegalStateException("현재 등록된 거래가 없습니다."));
+    }
+
+    static String extractHtmlForWebhook(FormatMessage htmlFmt) {
+        Object bodyObj = htmlFmt.primaryPayload().get("body");
+        if (bodyObj instanceof Map<?, ?> bodyMap) {
+            Object content = bodyMap.get("content");
+            if (content instanceof String html && !html.isBlank()) {
+                return html.replaceAll("<at id=\"\\d+\">([^<]+)</at>", "<b>@$1</b>");
+            }
+        }
+        Object workflowsHtml = htmlFmt.workflowsPayload().get("htmlBody");
+        return workflowsHtml != null ? workflowsHtml.toString() : "";
     }
 }

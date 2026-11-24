@@ -66,6 +66,10 @@ public class OpsViewController {
         FormatMessage heroFmt = composer.composeHeroFormat(selectedTx);
         FormatMessage adaptiveFmt = composer.composeAdaptiveComparisonFormat(selectedTx);
 
+        String messageWebhookUrl = teamsNotifier.settings().getMessageWebhookUrl();
+        boolean messageWebhookConfigured = messageWebhookUrl != null && !messageWebhookUrl.isBlank();
+
+        model.addAttribute("messageWebhookConfigured", messageWebhookConfigured);
         model.addAttribute("transactions", transactions);
         model.addAttribute("tx", selectedTx);
         model.addAttribute("approvedAtKst", teamsNotifier.cards().formatTimestamp(selectedTx.getApprovedAt()));
@@ -99,7 +103,11 @@ public class OpsViewController {
 
         String webhookUrl = teamsNotifier.settings().getWebhookUrl();
         boolean webhookConfigured = webhookUrl != null && !webhookUrl.isBlank();
+        String messageWebhookUrl = teamsNotifier.settings().getMessageWebhookUrl();
+        boolean messageWebhookConfigured = messageWebhookUrl != null && !messageWebhookUrl.isBlank();
+
         model.addAttribute("webhookConfigured", webhookConfigured);
+        model.addAttribute("messageWebhookConfigured", messageWebhookConfigured);
         model.addAttribute("transactions", transactions);
         model.addAttribute("demoLinksByTx", demoLinksByTx);
         model.addAttribute("outbox", teamsNotifier.webhookClient().getOutbox());
@@ -180,6 +188,41 @@ public class OpsViewController {
         redirectAttributes.addFlashAttribute("toastMessage",
                 "환불 승인 요청 카드 발송 완료: " + txId);
         return "redirect:/ops";
+    }
+
+    @PostMapping("/ops/simulate/message")
+    public String simulateMessage(
+            @RequestParam(defaultValue = "<b>✅ 일반/HTML 메시지 테스트</b><br>2번 워크플로(Post message) 수신 확인입니다.") String message,
+            RedirectAttributes redirectAttributes
+    ) {
+        var record = teamsNotifier.sendMessage(
+                "MSG-" + System.currentTimeMillis() % 100000,
+                "[2번 웹후크] 일반/HTML 메시지 테스트",
+                message,
+                null
+        );
+        redirectAttributes.addFlashAttribute("toastMessage",
+                "일반/HTML 메시지 발송 처리 완료: " + record.deliveryNote());
+        return "redirect:/ops";
+    }
+
+    @PostMapping("/ops/formats/send-html")
+    public String sendHtmlFormatFromLab(
+            @RequestParam String txId,
+            RedirectAttributes redirectAttributes
+    ) {
+        PaymentTransaction tx = billingService.getRequiredTransaction(txId);
+        FormatMessage htmlFmt = composer.composeHtmlFormat(tx, "billing-oncall@company.com", null);
+        String htmlBody = TeamsFormatController.extractHtmlForWebhook(htmlFmt);
+        var record = teamsNotifier.sendMessage(
+                tx.getTxId(),
+                "[2번 웹후크 HTML 표] " + tx.getMerchantName() + " (" + tx.getTxId() + ")",
+                htmlBody,
+                htmlFmt.signedEntryUrl()
+        );
+        redirectAttributes.addFlashAttribute("toastMessage",
+                "HTML 표 메시지 발송 처리 완료 (" + tx.getTxId() + "): " + record.deliveryNote());
+        return "redirect:/ops/formats?txId=" + tx.getTxId();
     }
 
     @PostMapping("/ops/transactions/{txId}/capture")

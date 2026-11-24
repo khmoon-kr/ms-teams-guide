@@ -114,5 +114,18 @@ class TeamsFormatControllerTest {
         mockMvc.perform(get("/ops/formats"))
                 .andExpect(status().isOk())
                 .andExpect(content().string(containsString("MS Teams 알림 방식 6종 비교")));
+
+        // 8. 2번 메시지 웹후크(html-message/send) 발송(Dry-Run) 확인
+        mockMvc.perform(post("/api/v1/teams/formats/html-message/send")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "txId": "TX-20261119-1000",
+                                  "note": "2번 웹후크 테스트"
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.eventType").value("TEXT_HTML_MESSAGE"))
+                .andExpect(jsonPath("$.payload.message", containsString("2번 웹후크 테스트")));
     }
 }
