@@ -148,7 +148,7 @@ public class TeamsFormatController {
                 return html.replaceAll("<at id=\"\\d+\">([^<]+)</at>", "<b>@$1</b>");
             }
         }
-        Object workflowsHtml = htmlFmt.workflowsPayload().get("htmlBody");
+        Object workflowsHtml = htmlFmt.workflowsTriggerPayload().get("htmlBody");
         return workflowsHtml != null ? workflowsHtml.toString() : "";
     }
 }
