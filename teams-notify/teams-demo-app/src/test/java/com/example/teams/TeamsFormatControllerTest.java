@@ -127,5 +127,15 @@ class TeamsFormatControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.eventType").value("TEXT_HTML_MESSAGE"))
                 .andExpect(jsonPath("$.payload.message", containsString("2번 웹후크 테스트")));
+
+        // 9. 다양한 스타일의 Adaptive Card 쇼케이스 6종 목록 및 일괄 발송 확인
+        mockMvc.perform(get("/api/v1/teams/card-styles"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(6)));
+
+        mockMvc.perform(post("/api/v1/teams/card-styles/send-all"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(6)))
+                .andExpect(jsonPath("$[0].payload.attachments[0].content.type").value("AdaptiveCard"));
     }
 }

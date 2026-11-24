@@ -10,6 +10,7 @@ import com.example.teams.dto.CapturePaymentRequest;
 import com.example.teams.dto.RefundDecisionCallbackRequest;
 import com.example.teams.dto.RefundPaymentRequest;
 import com.example.teams.security.LinkVerificationResult;
+import com.example.teams.service.AdaptiveCardShowcaseService;
 import com.example.teams.service.BillingOperationsService;
 import com.example.teams.service.BillingTeamsComposer;
 import org.springframework.stereotype.Controller;
@@ -38,15 +39,18 @@ public class OpsViewController {
     private final BillingOperationsService billingService;
     private final BillingTeamsComposer composer;
     private final TeamsNotifier teamsNotifier;
+    private final AdaptiveCardShowcaseService showcaseService;
 
     public OpsViewController(
             BillingOperationsService billingService,
             BillingTeamsComposer composer,
-            TeamsNotifier teamsNotifier
+            TeamsNotifier teamsNotifier,
+            AdaptiveCardShowcaseService showcaseService
     ) {
         this.billingService = billingService;
         this.composer = composer;
         this.teamsNotifier = teamsNotifier;
+        this.showcaseService = showcaseService;
     }
 
     @GetMapping("/ops/formats")
@@ -108,6 +112,7 @@ public class OpsViewController {
 
         model.addAttribute("webhookConfigured", webhookConfigured);
         model.addAttribute("messageWebhookConfigured", messageWebhookConfigured);
+        model.addAttribute("cardStyles", showcaseService.listStyles());
         model.addAttribute("transactions", transactions);
         model.addAttribute("demoLinksByTx", demoLinksByTx);
         model.addAttribute("outbox", teamsNotifier.webhookClient().getOutbox());
@@ -203,6 +208,23 @@ public class OpsViewController {
         );
         redirectAttributes.addFlashAttribute("toastMessage",
                 "일반/HTML 메시지 발송 처리 완료: " + record.deliveryNote());
+        return "redirect:/ops";
+    }
+
+    @PostMapping("/ops/simulate/card-style/all")
+    public String simulateAllCardStyles(RedirectAttributes redirectAttributes) {
+        var records = showcaseService.sendAllStyles();
+        long liveCount = records.stream().filter(r -> r.liveDelivered()).count();
+        redirectAttributes.addFlashAttribute("toastMessage",
+                "Adaptive Card 6종 스타일 일괄 발송 완료 (총 " + records.size() + "건 / 실시간 전송 " + liveCount + "건)");
+        return "redirect:/ops";
+    }
+
+    @PostMapping("/ops/simulate/card-style/{styleId}")
+    public String simulateCardStyle(@PathVariable String styleId, RedirectAttributes redirectAttributes) {
+        var record = showcaseService.sendStyle(styleId);
+        redirectAttributes.addFlashAttribute("toastMessage",
+                record.summary() + " 발송 완료: " + record.deliveryNote());
         return "redirect:/ops";
     }
 
